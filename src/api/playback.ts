@@ -6,24 +6,95 @@ type DeviceProfile = components['schemas']['DeviceProfile'];
 export type MediaSource = components['schemas']['MediaSourceInfo'];
 export type PlaybackInfo = components['schemas']['PlaybackInfoResponse'];
 
+/** What this browser can decode, as server codec names. */
+export interface Capabilities {
+  /** Video codecs playable in MP4 (direct play and fMP4 HLS), best transcode target first. */
+  mp4Video: string[];
+  /** Audio codecs playable in MP4, best transcode target first. */
+  mp4Audio: string[];
+  webm: boolean;
+  mp3: boolean;
+  flac: boolean;
+}
+
+/* MIME probes per server codec name. Order is transcode preference:
+   h264 is cheapest to encode; av1 covers browsers without proprietary
+   codecs (Playwright's Chromium, some Linux builds). */
+const VIDEO_PROBES: [string, string][] = [
+  ['h264', 'video/mp4; codecs="avc1.640029"'],
+  ['hevc', 'video/mp4; codecs="hvc1.1.6.L120.90"'],
+  ['av1', 'video/mp4; codecs="av01.0.08M.08"'],
+];
+const AUDIO_PROBES: [string, string][] = [
+  ['aac', 'audio/mp4; codecs="mp4a.40.2"'],
+  ['opus', 'audio/mp4; codecs="opus"'],
+  ['flac', 'audio/mp4; codecs="flac"'],
+  ['mp3', 'audio/mp4; codecs="mp3"'],
+];
+
+export function probeCapabilities(
+  supports: (mime: string) => boolean = (m) =>
+    typeof MediaSource !== 'undefined' ? MediaSource.isTypeSupported(m) : false,
+): Capabilities {
+  return {
+    mp4Video: VIDEO_PROBES.filter(([, m]) => supports(m)).map(([c]) => c),
+    mp4Audio: AUDIO_PROBES.filter(([, m]) => supports(m)).map(([c]) => c),
+    webm: supports('video/webm; codecs="vp9, opus"'),
+    mp3: supports('audio/mpeg'),
+    flac: supports('audio/flac') || supports('audio/mp4; codecs="flac"'),
+  };
+}
+
 /**
- * What this client can genuinely direct-play. Honest and minimal: no
- * TranscodingProfiles yet, so a source we can't direct-play is a
- * visible fault, not a silent transcode. This request is the client's first
- * exercise of the server's StreamBuilder negotiation.
+ * The profile the server's StreamBuilder negotiates against: direct play for
+ * what this browser decodes, otherwise an HLS transcode (fMP4 segments) to
+ * the best codecs it decodes.
  */
-export const DEVICE_PROFILE: DeviceProfile = {
-  Name: 'Deadfin Web',
-  MaxStreamingBitrate: 120_000_000,
-  DirectPlayProfiles: [
-    { Container: 'webm', Type: 'Video', VideoCodec: 'vp9,vp8,av1', AudioCodec: 'opus,vorbis' },
-    { Container: 'mp4,m4v', Type: 'Video', VideoCodec: 'h264,hevc,av1', AudioCodec: 'aac,mp3,opus,flac' },
-    { Container: 'mp3', Type: 'Audio' },
-    { Container: 'flac', Type: 'Audio' },
-  ],
-  TranscodingProfiles: [],
-  SubtitleProfiles: [],
-};
+export function buildDeviceProfile(caps: Capabilities): DeviceProfile {
+  const direct: DeviceProfile['DirectPlayProfiles'] = [];
+  if (caps.webm) {
+    direct.push({ Container: 'webm', Type: 'Video', VideoCodec: 'vp9,vp8,av1', AudioCodec: 'opus,vorbis' });
+  }
+  if (caps.mp4Video.length) {
+    direct.push({
+      Container: 'mp4,m4v',
+      Type: 'Video',
+      VideoCodec: caps.mp4Video.join(','),
+      AudioCodec: caps.mp4Audio.join(','),
+    });
+  }
+  if (caps.mp3) direct.push({ Container: 'mp3', Type: 'Audio' });
+  if (caps.flac) direct.push({ Container: 'flac', Type: 'Audio' });
+
+  const transcoding: NonNullable<DeviceProfile['TranscodingProfiles']> = [];
+  if (caps.mp4Video.length && caps.mp4Audio.length) {
+    transcoding.push({
+      Container: 'mp4',
+      Type: 'Video',
+      Protocol: 'hls',
+      Context: 'Streaming',
+      VideoCodec: caps.mp4Video.join(','),
+      AudioCodec: caps.mp4Audio.join(','),
+      MaxAudioChannels: '2',
+      BreakOnNonKeyFrames: true,
+      MinSegments: 1,
+      SegmentLength: 0,
+      EstimateContentLength: false,
+      TranscodeSeekInfo: 'Auto',
+      CopyTimestamps: false,
+      EnableSubtitlesInManifest: false,
+      EnableAudioVbrEncoding: true,
+      EnableMpegtsM2TsMode: false,
+    });
+  }
+  return {
+    Name: 'Deadfin Web',
+    MaxStreamingBitrate: 120_000_000,
+    DirectPlayProfiles: direct,
+    TranscodingProfiles: transcoding,
+    SubtitleProfiles: [],
+  };
+}
 
 export async function getPlaybackInfo(
   api: Api,
@@ -33,15 +104,36 @@ export async function getPlaybackInfo(
 ): Promise<PlaybackInfo> {
   const { data, error } = await api.POST('/Items/{itemId}/PlaybackInfo', {
     params: { path: { itemId }, query: { userId, startTimeTicks } },
-    body: { DeviceProfile: DEVICE_PROFILE, AutoOpenLiveStream: false },
+    body: { DeviceProfile: buildDeviceProfile(probeCapabilities()), AutoOpenLiveStream: false },
   });
   if (error !== undefined || !data) throw new Error('PlaybackInfo failed');
   return data;
 }
 
-/** First media source the negotiation says we can direct-play, if any. */
-export function pickDirectPlaySource(info: PlaybackInfo): MediaSource | undefined {
-  return (info.MediaSources ?? []).find((s) => s.SupportsDirectPlay);
+export type PlayMethod = 'DirectPlay' | 'Transcode';
+
+/**
+ * The stream to play: the first source the negotiation lets us direct-play,
+ * else the first it offers to transcode for us. Undefined when neither.
+ */
+export function pickSource(info: PlaybackInfo): { media: MediaSource; method: PlayMethod } | undefined {
+  const sources = info.MediaSources ?? [];
+  const direct = sources.find((s) => s.SupportsDirectPlay);
+  if (direct) return { media: direct, method: 'DirectPlay' };
+  const transcode = sources.find((s) => s.SupportsTranscoding && s.TranscodingUrl);
+  if (transcode) return { media: transcode, method: 'Transcode' };
+  return undefined;
+}
+
+/**
+ * The server's HLS playlist for a transcode. TranscodingUrl is relative to
+ * the server and normally carries the token; add it when it does not, since
+ * hls.js segment requests can send headers but native HLS cannot.
+ */
+export function transcodeUrl(serverUrl: string, source: MediaSource, token: string): string {
+  const url = new URL(serverUrl.replace(/\/$/, '') + (source.TranscodingUrl ?? ''));
+  if (!url.searchParams.has('api_key') && !url.searchParams.has('ApiKey')) url.searchParams.set('api_key', token);
+  return url.toString();
 }
 
 /**
@@ -70,6 +162,7 @@ interface ReportCtx {
   itemId: string;
   mediaSourceId?: string | null;
   playSessionId?: string | null;
+  playMethod?: PlayMethod;
 }
 
 const common = (ctx: ReportCtx, positionTicks: number) => ({
@@ -77,7 +170,7 @@ const common = (ctx: ReportCtx, positionTicks: number) => ({
   MediaSourceId: ctx.mediaSourceId ?? undefined,
   PlaySessionId: ctx.playSessionId ?? undefined,
   PositionTicks: Math.max(0, Math.round(positionTicks)),
-  PlayMethod: 'DirectPlay' as const,
+  PlayMethod: ctx.playMethod ?? 'DirectPlay',
   CanSeek: true,
 });
 

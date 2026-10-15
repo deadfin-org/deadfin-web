@@ -18,6 +18,7 @@
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@tanstack/react-query": "^5.101.4",
     "blurhash": "^2.0.5",
+    "hls.js": "^1.7.3",
     "openapi-fetch": "^0.17.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

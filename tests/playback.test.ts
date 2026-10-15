@@ -1,31 +1,99 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApi } from '../src/api/client';
-import { DEVICE_PROFILE, directStreamUrl, pickDirectPlaySource, reportStopped } from '../src/api/playback';
+import {
+  buildDeviceProfile,
+  directStreamUrl,
+  pickSource,
+  probeCapabilities,
+  reportStopped,
+  transcodeUrl,
+} from '../src/api/playback';
 import { formatTimecode } from '../src/lib/format';
 
 beforeEach(() => localStorage.clear());
 
-describe('DEVICE_PROFILE', () => {
-  it('is honest: direct-play only, no transcoding profiles yet', () => {
-    expect(DEVICE_PROFILE.TranscodingProfiles).toEqual([]);
-    expect(DEVICE_PROFILE.DirectPlayProfiles?.some((p) => p.Container?.includes('webm'))).toBe(true);
+const CHROMIUM_FREE = new Set([
+  'video/mp4; codecs="av01.0.08M.08"',
+  'audio/mp4; codecs="opus"',
+  'audio/mp4; codecs="flac"',
+  'video/webm; codecs="vp9, opus"',
+  'audio/mpeg',
+]);
+const CHROME = new Set([
+  ...CHROMIUM_FREE,
+  'video/mp4; codecs="avc1.640029"',
+  'audio/mp4; codecs="mp4a.40.2"',
+]);
+
+describe('probeCapabilities', () => {
+  it('lists what a browser without proprietary codecs decodes', () => {
+    const caps = probeCapabilities((m) => CHROMIUM_FREE.has(m));
+    expect(caps.mp4Video).toEqual(['av1']);
+    expect(caps.mp4Audio).toEqual(['opus', 'flac']);
+    expect(caps.webm).toBe(true);
+  });
+
+  it('puts h264 and aac first where the browser has them', () => {
+    const caps = probeCapabilities((m) => CHROME.has(m));
+    expect(caps.mp4Video[0]).toBe('h264');
+    expect(caps.mp4Audio[0]).toBe('aac');
   });
 });
 
-describe('pickDirectPlaySource', () => {
-  it('selects the first direct-playable source', () => {
+describe('buildDeviceProfile', () => {
+  it('offers an fMP4 HLS transcode to the codecs the browser decodes', () => {
+    const p = buildDeviceProfile(probeCapabilities((m) => CHROMIUM_FREE.has(m)));
+    expect(p.TranscodingProfiles).toHaveLength(1);
+    expect(p.TranscodingProfiles![0]).toMatchObject({
+      Container: 'mp4',
+      Protocol: 'hls',
+      Type: 'Video',
+      VideoCodec: 'av1',
+      AudioCodec: 'opus,flac',
+    });
+    expect(p.DirectPlayProfiles?.some((d) => d.Container === 'webm')).toBe(true);
+  });
+
+  it('offers no transcode when the browser decodes no MP4 video', () => {
+    const p = buildDeviceProfile(probeCapabilities((m) => m === 'video/webm; codecs="vp9, opus"'));
+    expect(p.TranscodingProfiles).toEqual([]);
+    expect(p.DirectPlayProfiles?.map((d) => d.Container)).toEqual(['webm']);
+  });
+});
+
+describe('pickSource', () => {
+  it('prefers the first direct-playable source', () => {
     const info = {
       MediaSources: [
-        { Id: 'a', SupportsDirectPlay: false },
+        { Id: 'a', SupportsDirectPlay: false, SupportsTranscoding: true, TranscodingUrl: '/t' },
         { Id: 'b', SupportsDirectPlay: true },
-        { Id: 'c', SupportsDirectPlay: true },
       ],
     };
-    expect(pickDirectPlaySource(info as never)?.Id).toBe('b');
+    expect(pickSource(info as never)).toMatchObject({ method: 'DirectPlay', media: { Id: 'b' } });
   });
-  it('is undefined when negotiation offers none', () => {
-    expect(pickDirectPlaySource({ MediaSources: [{ SupportsDirectPlay: false }] } as never)).toBeUndefined();
-    expect(pickDirectPlaySource({} as never)).toBeUndefined();
+
+  it('falls back to a transcode the server offers', () => {
+    const info = { MediaSources: [{ Id: 'a', SupportsDirectPlay: false, SupportsTranscoding: true, TranscodingUrl: '/t' }] };
+    expect(pickSource(info as never)).toMatchObject({ method: 'Transcode', media: { Id: 'a' } });
+  });
+
+  it('is undefined when negotiation offers neither', () => {
+    expect(pickSource({ MediaSources: [{ SupportsDirectPlay: false, SupportsTranscoding: false }] } as never)).toBeUndefined();
+    expect(pickSource({} as never)).toBeUndefined();
+  });
+});
+
+describe('transcodeUrl', () => {
+  it('joins the server address and keeps the server-issued token', () => {
+    const u = new URL(transcodeUrl('http://srv:8096/jf', { TranscodingUrl: '/videos/i1/master.m3u8?ApiKey=abc' } as never, 'tok'));
+    expect(u.pathname).toBe('/jf/videos/i1/master.m3u8');
+    expect(u.searchParams.get('ApiKey')).toBe('abc');
+    expect(u.searchParams.has('api_key')).toBe(false);
+  });
+
+  it('adds the token when the server left it out', () => {
+    const u = new URL(transcodeUrl('http://srv:8096', { TranscodingUrl: '/videos/i1/master.m3u8?a=1' } as never, 'tok'));
+    expect(u.searchParams.get('api_key')).toBe('tok');
   });
 });
 

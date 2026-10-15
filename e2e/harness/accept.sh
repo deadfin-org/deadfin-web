@@ -49,7 +49,7 @@ docker compose version >/dev/null 2>&1 || fail 'docker compose plugin is require
 # VP9/Opus webm, not h264 mp4: Playwright's Chromium ships without proprietary
 # codecs. 10s duration so playback tests can pause before 'ended'.
 rm -rf .state
-mkdir -p .state/media/movies .state/media/archive .state/media/tv .state/media/music .state/media/photos
+mkdir -p .state/media/movies .state/media/archive .state/media/formats .state/media/tv .state/media/music .state/media/photos
 
 # Docker Desktop's VirtioFS can silently swallow container writes to fresh
 # bind-mounted dirs (exit 0, no file — observed 2026-07-29). Every generated
@@ -110,6 +110,15 @@ cp .state/media/tv/episode.webm ".state/media/tv/${SHOW}/Season 01/Trench Tales 
 cp .state/media/tv/episode.webm ".state/media/tv/${SHOW}/Season 01/Trench Tales S01E02 - The Thermocline.webm"
 cp .state/media/tv/episode.webm ".state/media/tv/${SHOW}/Season 00/Trench Tales S00E01 - Behind the Hull.webm"
 rm .state/media/tv/episode.webm
+
+# H.264/AAC in Matroska: no browser direct-plays it, so the server must
+# transcode it to HLS for the player (and Playwright's Chromium has no H.264
+# decoder at all, so the transcode has to change codecs, not just remux).
+mkdir -p '.state/media/formats/Hull Breach (2023)'
+gen_file 'formats/Hull Breach (2023)/Hull Breach (2023).mkv' \
+  -f lavfi -i "testsrc2=duration=10:size=640x360:rate=24" \
+  -f lavfi -i "sine=frequency=330:duration=10" \
+  -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 96k -shortest
 
 # ---- helpers ----------------------------------------------------------------
 wait_ping() { # $1 = base url
@@ -226,6 +235,9 @@ curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' \
 curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' \
   -X POST "$BASE/Library/VirtualFolders?name=Shows&collectionType=tvshows&refreshLibrary=true" \
   -d '{"LibraryOptions":{"EnableInternetProviders":false,"SaveLocalMetadata":false,"PathInfos":[{"Path":"/media/tv"}]}}' >/dev/null
+curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' \
+  -X POST "$BASE/Library/VirtualFolders?name=Other%20formats&collectionType=movies&refreshLibrary=true" \
+  -d '{"LibraryOptions":{"EnableInternetProviders":false,"SaveLocalMetadata":false,"PathInfos":[{"Path":"/media/formats"}]}}' >/dev/null
 
 # Loosen resume thresholds for 10s media.
 if ! curl -fsS -H "$AUTHED" "$BASE/System/Configuration" |
@@ -234,7 +246,8 @@ if ! curl -fsS -H "$AUTHED" "$BASE/System/Configuration" |
   [ "$SEED" = soft ] && warn 'resume thresholds not settable through /System/Configuration — parity finding' || fail 'configuring resume thresholds failed'
 fi
 
-WANT=$((3 + ARCHIVE_COUNT))
+# The three movies, the formats titles, and the archive.
+WANT=$((3 + 1 + ARCHIVE_COUNT))
 log "waiting for the scan to surface ${WANT} movies"
 for i in $(seq 1 60); do
   COUNT=$(curl -fsS -H "$AUTHED" \

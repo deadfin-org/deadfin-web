@@ -5,11 +5,13 @@ import { useAuth } from '../api/AuthContext';
 import {
   directStreamUrl,
   getPlaybackInfo,
-  pickDirectPlaySource,
+  pickSource,
   reportProgress,
   reportStart,
   reportStopped,
+  transcodeUrl,
   type MediaSource,
+  type PlayMethod,
 } from '../api/playback';
 import { episodeLabel, fetchNextEpisode } from '../api/tv';
 import type { BaseItem } from '../api/library';
@@ -34,7 +36,12 @@ function PlayerInner({ itemId }: { itemId: string }) {
   const startTicks = Number(search.get('t') ?? 0) || 0;
 
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [source, setSource] = useState<{ url: string; media: MediaSource; playSessionId?: string | null } | null>(null);
+  const [source, setSource] = useState<{
+    url: string;
+    media: MediaSource;
+    method: PlayMethod;
+    playSessionId?: string | null;
+  } | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const [paused, setPaused] = useState(true);
   const [time, setTime] = useState(0);
@@ -50,14 +57,19 @@ function PlayerInner({ itemId }: { itemId: string }) {
     getPlaybackInfo(api, itemId, session.userId, startTicks)
       .then((info) => {
         if (cancelled) return;
-        const media = pickDirectPlaySource(info);
-        if (!media) {
-          setFault("this file can't play in this browser yet");
+        const picked = pickSource(info);
+        if (!picked) {
+          setFault("this file can't play in this browser, and the server did not offer to convert it");
           return;
         }
+        const { media, method } = picked;
         setSource({
-          url: directStreamUrl(session.serverUrl, itemId, media, session.accessToken),
+          url:
+            method === 'DirectPlay'
+              ? directStreamUrl(session.serverUrl, itemId, media, session.accessToken)
+              : transcodeUrl(session.serverUrl, media, session.accessToken),
           media,
+          method,
           playSessionId: info.PlaySessionId,
         });
       })
@@ -67,6 +79,44 @@ function PlayerInner({ itemId }: { itemId: string }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId]);
+
+  // A transcode is an HLS playlist: Safari plays it natively, other browsers
+  // through hls.js (loaded only when needed).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!source || !video) return;
+    if (source.method === 'DirectPlay' || video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = source.url;
+      return;
+    }
+    let hls: { destroy(): void } | undefined;
+    let cancelled = false;
+    void import('hls.js').then(({ default: Hls }) => {
+      if (cancelled) return;
+      if (!Hls.isSupported()) {
+        setFault("this browser can't play streamed video");
+        return;
+      }
+      const h = new Hls({ startPosition: startTicks > 0 ? ticksToSeconds(startTicks) : -1 });
+      h.on(Hls.Events.ERROR, (_e, data) => {
+        if (!data.fatal) return;
+        const status = data.response?.code ?? 0;
+        setFault(
+          data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR && status >= 500
+            ? "the server couldn't convert this file for this browser"
+            : 'the stream faulted',
+        );
+      });
+      h.loadSource(source.url);
+      h.attachMedia(video);
+      hls = h;
+    });
+    return () => {
+      cancelled = true;
+      hls?.destroy();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source]);
 
   // Session reporting: start on first play, progress on a beat, stopped on exit.
   useEffect(() => {
@@ -78,6 +128,7 @@ function PlayerInner({ itemId }: { itemId: string }) {
       itemId,
       mediaSourceId: source.media.Id,
       playSessionId: source.playSessionId,
+      playMethod: source.method,
     };
     const pos = () => secondsToTicks(video.currentTime);
     let started = false;
@@ -110,7 +161,8 @@ function PlayerInner({ itemId }: { itemId: string }) {
     const onTime = () => setTime(video.currentTime);
     const onMeta = () => {
       setDuration(video.duration);
-      if (startTicks > 0) video.currentTime = ticksToSeconds(startTicks);
+      // hls.js starts at startPosition itself.
+      if (startTicks > 0 && source.method === 'DirectPlay') video.currentTime = ticksToSeconds(startTicks);
     };
     const onError = () => setFault('the stream faulted');
 
@@ -208,10 +260,10 @@ function PlayerInner({ itemId }: { itemId: string }) {
         <video
           ref={videoRef}
           className="player-video"
-          src={source.url}
           autoPlay
           playsInline
           data-testid="player-video"
+          data-play-method={source.method}
         />
       )}
 

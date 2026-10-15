@@ -395,3 +395,46 @@ test('search: results grouped by kind, links to the item, empty state', async ({
   await page.getByLabel('Search').fill('zzqx-nothing');
   await expect(page.getByTestId('search-empty')).toBeVisible();
 });
+
+test('transcode: a file the browser cannot decode plays through HLS', async ({ page }) => {
+  await descend(page);
+  // Deadfin v0.3.0-rc.3 finding: its HLS encoder makes H.264/AAC only, yet
+  // PlaybackInfo hands out a TranscodingUrl for the profile's codecs (AV1/Opus
+  // for Playwright's Chromium, which has no H.264), and master.m3u8 answers
+  // 501. Marked as expected to fail there until the server either encodes the
+  // requested codecs or stops offering them; a pass will flag this line.
+  const h264 = await page.evaluate(() => MediaSource.isTypeSupported('video/mp4; codecs="avc1.640029"'));
+  test.fail(process.env.HARNESS_PRODUCT === 'Deadfin' && !h264, 'Deadfin HLS encodes H.264/AAC only');
+  await page.getByTestId('shelf').filter({ hasText: 'Other formats' }).getByTestId('item-link').first().click();
+  await expect(page.getByTestId('item-detail')).toBeVisible();
+  const itemId = page.url().split('/item/')[1]!;
+  await page.getByTestId('action-play').click();
+
+  const video = page.getByTestId('player-video');
+  await expect(video).toHaveAttribute('data-play-method', 'Transcode', { timeout: 15_000 });
+  await expect
+    .poll(async () => video.evaluate((v: HTMLVideoElement) => v.currentTime), { timeout: 45_000 })
+    .toBeGreaterThan(2);
+  await page.screenshot({ path: `${EVIDENCE}10-transcode.png` });
+
+  // Pause mid-stream, surface; the server records where the transcode stopped.
+  await page.getByTestId('player-toggle').click();
+  const at = await video.evaluate((v: HTMLVideoElement) => v.currentTime);
+  await page.getByTestId('player-back').click();
+  await expect(page.getByTestId('item-detail')).toBeVisible();
+
+  const session = JSON.parse((await page.evaluate(() => localStorage.getItem('deadfin.session.v1')))!);
+  const auth = {
+    Authorization: `MediaBrowser Client="Deadfin Accept", Device="pw", DeviceId="pw", Version="0.1.0", Token="${session.accessToken}"`,
+  };
+  await expect
+    .poll(
+      async () => {
+        const res = await page.request.get(`${SERVER}/Items/${itemId}?userId=${session.userId}`, { headers: auth });
+        const body = (await res.json()) as { UserData?: { PlaybackPositionTicks?: number } };
+        return (body.UserData?.PlaybackPositionTicks ?? 0) / 10_000_000;
+      },
+      { timeout: 10_000 },
+    )
+    .toBeGreaterThan(Math.max(0.5, at - 2));
+});
