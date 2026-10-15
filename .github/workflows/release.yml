@@ -8,19 +8,30 @@
 # image index and the tarball, and an SPDX SBOM attestation per architecture
 # digest; the SBOMs are release assets too.
 #
-# Keep the trigger to tags: these jobs hold the packages: write and
-# contents: write tokens.
+# workflow_dispatch publishes an existing tag whose push started no run
+# (v0.3.0-rc.2 arrived in the same push that first added this workflow to
+# the repository, and GitHub started nothing). The run checks out that tag
+# and validates it exactly like a tag push; tags never move.
+#
+# Keep the triggers to tags and the manual tag dispatch: these jobs hold the
+# packages: write and contents: write tokens.
 name: release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release or rc tag to publish, e.g. v0.3.0-rc.2"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 env:
@@ -35,31 +46,38 @@ jobs:
       tag: ${{ steps.identity.outputs.tag }}
       version: ${{ steps.identity.outputs.version }}
       channel: ${{ steps.identity.outputs.channel }}
+      commit_sha: ${{ steps.identity.outputs.commit_sha }}
     steps:
       # actions/checkout v4.2.2. Full history: the tagged commit must be on
-      # origin/master, and the build probes refs/tags/<tag>.
+      # origin/master, and the build probes refs/tags/<tag>. A dispatch checks
+      # out the named tag, not the dispatching branch.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           fetch-depth: 0
           persist-credentials: false
 
+      # The commit is HEAD of the checkout, never github.sha: on a dispatch
+      # github.sha is the dispatching branch.
       - name: Derive and validate the release identity
         id: identity
         env:
+          EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
-          SHA: ${{ github.sha }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -eu
-          tag=${REF#refs/tags/}
+          if [ "$EVENT" = workflow_dispatch ]; then tag=$INPUT_TAG; else tag=${REF#refs/tags/}; fi
           echo "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$' \
             || { echo "::error::$tag is not a release or rc tag"; exit 1; }
           case "$tag" in *-rc.*) channel=rc ;; *) channel=release ;; esac
-          [ "$(git rev-parse "${REF}^{commit}")" = "$SHA" ] \
+          sha=$(git rev-parse HEAD)
+          [ "$(git rev-parse "refs/tags/${tag}^{commit}")" = "$sha" ] \
             || { echo "::error::tag and checkout differ"; exit 1; }
-          git merge-base --is-ancestor "$SHA" refs/remotes/origin/master \
+          git merge-base --is-ancestor "$sha" refs/remotes/origin/master \
             || { echo "::error::release commit is not on master"; exit 1; }
-          printf 'tag=%s\nversion=%s\nchannel=%s\nsource_date_epoch=%s\n' \
-            "$tag" "${tag#v}" "$channel" "$(git show -s --format=%ct "$SHA")" | tee -a "$GITHUB_OUTPUT"
+          printf 'tag=%s\nversion=%s\nchannel=%s\ncommit_sha=%s\nsource_date_epoch=%s\n' \
+            "$tag" "${tag#v}" "$channel" "$sha" "$(git show -s --format=%ct "$sha")" | tee -a "$GITHUB_OUTPUT"
 
       # actions/setup-node v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -70,7 +88,7 @@ jobs:
       - name: Unit tests + strict build
         env:
           DEADFIN_WEB_VERSION: ${{ steps.identity.outputs.version }}
-          DEADFIN_WEB_COMMIT: ${{ github.sha }}
+          DEADFIN_WEB_COMMIT: ${{ steps.identity.outputs.commit_sha }}
           SOURCE_DATE_EPOCH: ${{ steps.identity.outputs.source_date_epoch }}
         run: npm ci --no-audit --no-fund && npm test && npm run build
 
@@ -151,10 +169,10 @@ jobs:
           provenance: false
           tags: |
             ${{ env.IMAGE }}:${{ needs.build.outputs.tag }}
-            ${{ env.IMAGE }}:sha-${{ github.sha }}
+            ${{ env.IMAGE }}:sha-${{ needs.build.outputs.commit_sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ needs.build.outputs.commit_sha }}
             org.opencontainers.image.version=${{ needs.build.outputs.version }}
             org.opencontainers.image.licenses=GPL-2.0-only
             org.opencontainers.image.description=deadfin-web static bundle at /deadfin-web
@@ -177,16 +195,21 @@ jobs:
           REF: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
           TAG: ${{ needs.build.outputs.tag }}
           CHANNEL: ${{ needs.build.outputs.channel }}
+          COMMIT_SHA: ${{ needs.build.outputs.commit_sha }}
         run: |
           set -eu
           docker run --rm --platform linux/amd64 "$REF" cat /deadfin-web/build.json | tee build.json
           grep -q "\"Channel\": *\"$CHANNEL\"" build.json
-          grep -q "\"Revision\": *\"$GITHUB_SHA\"" build.json
+          grep -q "\"Revision\": *\"$COMMIT_SHA\"" build.json
           {
             echo "### ${IMAGE}:${TAG}"
             echo
             echo "\`${REF}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # sbom-action writes output-file but does not create its directory.
+      - name: Create the SBOM directory
+        run: install -d "$RUNNER_TEMP/sbom"
 
       # anchore/sbom-action v0.24.2. SPDX SBOM of each smoke-tested
       # architecture digest. The attest job attests them and the release job
@@ -302,8 +325,10 @@ jobs:
       contents: write
     steps:
       # actions/checkout v4.2.2, for CHANGELOG.md when the repository has one.
+      # The tagged commit, also on a dispatch.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: ${{ needs.build.outputs.commit_sha }}
           persist-credentials: false
 
       # actions/download-artifact v4.3.0
