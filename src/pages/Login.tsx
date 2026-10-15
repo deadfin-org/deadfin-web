@@ -5,7 +5,7 @@ import { SharkMark } from '../components/SharkMark';
 import './login.css';
 
 export function Login() {
-  const { signIn } = useAuth();
+  const { signIn, sessionEnded } = useAuth();
   const navigate = useNavigate();
   const [server, setServer] = useState(() => defaultServer());
   const [username, setUsername] = useState('');
@@ -76,6 +76,12 @@ export function Login() {
             autoComplete="current-password"
           />
         </label>
+
+        {!error && sessionEnded && (
+          <p className="login-error readout" role="status" data-testid="session-ended">
+            Your session ended. Sign in again.
+          </p>
+        )}
 
         {error && (
           <p className="login-error readout" role="alert">

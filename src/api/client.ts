@@ -28,8 +28,18 @@ export function authorizationHeader(opts: {
 
 export type Api = ReturnType<typeof createClient<paths>>;
 
-export function createApi(serverUrl: string, token?: string): Api {
-  const client = createClient<paths>({ baseUrl: serverUrl });
+/**
+ * A typed client for one server. With a token, `onUnauthorized` fires when
+ * the server answers 401: the token was revoked or expired, so the session
+ * is over and the caller should return to sign-in.
+ */
+export function createApi(
+  serverUrl: string,
+  token?: string,
+  onUnauthorized?: () => void,
+  fetchImpl?: typeof fetch,
+): Api {
+  const client = createClient<paths>({ baseUrl: serverUrl, ...(fetchImpl ? { fetch: fetchImpl } : {}) });
   client.use({
     onRequest({ request }) {
       request.headers.set(
@@ -37,6 +47,10 @@ export function createApi(serverUrl: string, token?: string): Api {
         authorizationHeader({ deviceId: deviceId(), token }),
       );
       return request;
+    },
+    onResponse({ response }) {
+      if (token && response.status === 401) onUnauthorized?.();
+      return response;
     },
   });
   return client;

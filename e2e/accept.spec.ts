@@ -191,3 +191,24 @@ test('sign-out ends the server session', async ({ page }) => {
     })
     .toBe(401);
 });
+
+test('a revoked token returns to sign-in with a message', async ({ page }) => {
+  await descend(page);
+  await expect(page.getByTestId('shelf').first()).toBeVisible({ timeout: 20_000 });
+
+  // End the session server-side, as a dashboard device delete would.
+  const session = JSON.parse(
+    (await page.evaluate(() => localStorage.getItem('deadfin.session.v1')))!,
+  ) as { accessToken: string };
+  const logout = await page.request.post(`${SERVER}/Sessions/Logout`, {
+    headers: {
+      Authorization: `MediaBrowser Client="Deadfin Accept", Device="pw", DeviceId="pw", Version="0.1.0", Token="${session.accessToken}"`,
+    },
+  });
+  expect(logout.status()).toBe(204);
+
+  await page.reload();
+  await expect(page).toHaveURL(/\/login$/, { timeout: 15_000 });
+  await expect(page.getByTestId('session-ended')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('deadfin.session.v1'))).toBeNull();
+});

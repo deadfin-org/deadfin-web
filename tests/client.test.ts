@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { authorizationHeader, primaryBlurhash, primaryImageUrl } from '../src/api/client';
+import { describe, expect, it, vi } from 'vitest';
+import { authorizationHeader, createApi, primaryBlurhash, primaryImageUrl } from '../src/api/client';
 import { clientVersion, webBuild } from '../src/build';
 
 describe('authorizationHeader', () => {
@@ -67,5 +67,30 @@ describe('primaryBlurhash', () => {
   it('is undefined when tag and hashes do not line up', () => {
     expect(primaryBlurhash({ ImageTags: { Primary: 'tagA' }, ImageBlurHashes: { Primary: {} } })).toBeUndefined();
     expect(primaryBlurhash({ ImageTags: {}, ImageBlurHashes: { Primary: { t: 'h' } } })).toBeUndefined();
+  });
+});
+
+describe('createApi — 401 handling', () => {
+  const respond = (status: number) => async () => new Response('{}', { status, headers: { 'Content-Type': 'application/json' } });
+
+  it('calls onUnauthorized when an authenticated call gets 401', async () => {
+    const onUnauthorized = vi.fn();
+    const api = createApi('http://s', 'tok', onUnauthorized, respond(401));
+    await api.GET('/Users/Me');
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([200, 403, 500])('does not call it on %i', async (status) => {
+    const onUnauthorized = vi.fn();
+    const api = createApi('http://s', 'tok', onUnauthorized, respond(status));
+    await api.GET('/Users/Me');
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it('ignores 401 without a token (wrong password at sign-in)', async () => {
+    const onUnauthorized = vi.fn();
+    const api = createApi('http://s', undefined, onUnauthorized, respond(401));
+    await api.POST('/Users/AuthenticateByName', { body: { Username: 'a', Pw: 'b' } });
+    expect(onUnauthorized).not.toHaveBeenCalled();
   });
 });
