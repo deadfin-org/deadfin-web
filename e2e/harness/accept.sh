@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# deadfin-web acceptance: hermetic, local, observable. Two targets:
+# deadfin-web acceptance: hermetic, local, observable. Two targets, seeded
+# the same way, through the public API (setup wizard, library, config):
 #
 #   ACCEPT_TARGET=jellyfin (default) — stock jellyfin 12.0.0 by digest, the
-#     contract source of truth. Cross-origin (vite preview app → API). This is
-#     the merge gate.
-#   ACCEPT_TARGET=deadfin — pinned deadfin image, seeded with deadfin's own
-#     gate tooling, same-origin behind nginx (production topology; also
-#     required until the Deadfin CORS parity gap is fixed). This is the
-#     parity probe: pass-on-stock/fail-on-deadfin = server finding.
+#     contract source of truth. Cross-origin (static app front → API).
+#   ACCEPT_TARGET=deadfin — the Deadfin image in DEADFIN_IMAGE. The suite runs
+#     twice: same-origin, with the app served by Deadfin itself from its /web
+#     directory (the alpha topology), then cross-origin from a static front.
+#     Pass-on-stock/fail-on-deadfin = server finding. Seeding gaps are
+#     warnings unless ACCEPT_STRICT=1 (release runs), then failures.
 #
 # Requirements: docker (with compose), node. No network beyond localhost +
 # pulling pinned images.
@@ -17,6 +18,7 @@ cd "$(dirname "$0")"
 HARNESS_DIR=$(pwd)
 REPO_DIR=$(cd ../.. && pwd)
 TARGET="${ACCEPT_TARGET:-jellyfin}"
+STRICT="${ACCEPT_STRICT:-0}"
 USER_NAME=abyss
 USER_PASS=trench-test-1
 AUTH_HDR='Authorization: MediaBrowser Client="Deadfin Harness", Device="ci", DeviceId="harness", Version="0.1.0"'
@@ -36,7 +38,7 @@ esac
 
 cleanup() {
   log 'tearing down'
-  "${COMPOSE[@]}" --profile seed --profile test down -v --timeout 5 >/dev/null 2>&1 || true
+  "${COMPOSE[@]}" --profile test down -v --timeout 5 >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -47,7 +49,7 @@ docker compose version >/dev/null 2>&1 || fail 'docker compose plugin is require
 # VP9/Opus webm, not h264 mp4: Playwright's Chromium ships without proprietary
 # codecs. 10s duration so playback tests can pause before 'ended'.
 rm -rf .state
-mkdir -p .state/media/movies .state/media/tv .state/media/music .state/media/photos .state/seed
+mkdir -p .state/media/movies .state/media/tv .state/media/music .state/media/photos
 
 # Docker Desktop's VirtioFS can silently swallow container writes to fresh
 # bind-mounted dirs (exit 0, no file — observed 2026-07-29). Every generated
@@ -133,90 +135,84 @@ seed_user_data() {
   fi
 }
 
-# ---- 2. target bring-up -----------------------------------------------------
-if [ "$TARGET" = jellyfin ]; then
-  PORT="${HARNESS_PORT:-8097}"
-  BASE="http://localhost:${PORT}"
+# ---- 2. build the app -------------------------------------------------------
+# Before bring-up: the deadfin target serves dist/ from its own /web directory
+# and registers /web only if the directory exists at startup. Building first
+# also keeps docker from creating a root-owned ./dist for a bind mount.
+cd "$REPO_DIR"
+log 'building app'
+npm run build >/dev/null
+cd "$HARNESS_DIR"
 
-  log "starting jellyfin 12.0.0 on :${PORT}"
-  "${COMPOSE[@]}" up -d --quiet-pull server >/dev/null
-  wait_ping "$BASE" || { curl -sv "$BASE/System/Info/Public" 2>&1 | tail -5 >&2 || true; "${COMPOSE[@]}" logs --tail 20 server >&2 || true; fail 'server did not come up in 120s'; }
+# ---- 3. target bring-up and API seeding -------------------------------------
+case "$TARGET" in
+  jellyfin) PORT="${HARNESS_PORT:-8097}"; SEED=hard ;;
+  deadfin) PORT="${HARNESS_PORT:-8098}"; SEED=$([ "$STRICT" = 1 ] && echo hard || echo soft) ;;
+esac
+BASE="http://localhost:${PORT}"
 
-  log 'running setup wizard over the API'
-  # /System/Ping answers well before startup tasks finish (503 window can
-  # stretch past a minute on a loaded machine) — be patient here.
-  for i in $(seq 1 90); do
-    curl -fsS -H "$AUTH_HDR" -H 'Content-Type: application/json' \
-      -X POST "$BASE/Startup/Configuration" \
-      -d '{"UICulture":"en-US","MetadataCountryCode":"US","PreferredMetadataLanguage":"en"}' >/dev/null 2>&1 && break
-    [ "$i" = 90 ] && fail 'wizard configuration kept failing for 180s'
-    sleep 2
-  done
-  curl -fsS -H "$AUTH_HDR" "$BASE/Startup/User" >/dev/null
-  curl -fsS -H "$AUTH_HDR" -H 'Content-Type: application/json' \
-    -X POST "$BASE/Startup/User" -d "{\"Name\":\"${USER_NAME}\",\"Password\":\"${USER_PASS}\"}" >/dev/null
-  curl -fsS -H "$AUTH_HDR" -X POST "$BASE/Startup/Complete" >/dev/null
-  api_login
+log "starting the ${TARGET} server on :${PORT}"
+"${COMPOSE[@]}" up -d --quiet-pull server >/dev/null
+wait_ping "$BASE" || { curl -sv "$BASE/System/Info/Public" 2>&1 | tail -5 >&2 || true; "${COMPOSE[@]}" logs --tail 25 server >&2 || true; fail 'server did not come up in 120s'; }
 
-  log 'adding Movies library (internet providers disabled — hermetic)'
-  curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' \
-    -X POST "$BASE/Library/VirtualFolders?name=Movies&collectionType=movies&refreshLibrary=true" \
-    -d '{"LibraryOptions":{"EnableInternetProviders":false,"SaveLocalMetadata":false,"PathInfos":[{"Path":"/media/movies"}]}}' >/dev/null
+# Deadfin's first-run gate (D-53) admits direct local-network clients only.
+# The harness is one, but if a docker setup presents it otherwise, use the
+# setup link from the server log, as an operator behind a proxy would.
+SETUP_HDR=()
+setup_link_cookie() {
+  local token
+  token=$("${COMPOSE[@]}" logs server 2>/dev/null | grep -o 'setup?token=[0-9a-f]*' | tail -1 | cut -d= -f2)
+  [ -n "$token" ] || fail 'setup gate refused the wizard and no setup link is in the server log'
+  log 'setup gate refused a direct request; using the setup link from the server log'
+  SETUP_HDR=(-H "Cookie: deadfin-setup=${token}")
+}
+wizard() { curl -fsS -H "$AUTH_HDR" ${SETUP_HDR[@]+"${SETUP_HDR[@]}"} "$@"; }
 
-  # Loosen resume thresholds for 10s media.
-  curl -fsS -H "$AUTHED" "$BASE/System/Configuration" |
-    python3 -c 'import json,sys; c=json.load(sys.stdin); c["MinResumeDurationSeconds"]=1; c["MinResumePct"]=1; c["MaxResumePct"]=99; print(json.dumps(c))' |
-    curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' -X POST "$BASE/System/Configuration" -d @- >/dev/null
+log 'running setup wizard over the API'
+# /System/Ping answers well before startup tasks finish (503 window can
+# stretch past a minute on a loaded machine) — be patient here.
+for i in $(seq 1 90); do
+  code=$(curl -s -o /dev/null -w '%{http_code}' -H "$AUTH_HDR" ${SETUP_HDR[@]+"${SETUP_HDR[@]}"} \
+    -H 'Content-Type: application/json' -X POST "$BASE/Startup/Configuration" \
+    -d '{"UICulture":"en-US","MetadataCountryCode":"US","PreferredMetadataLanguage":"en"}' || true)
+  case "$code" in
+    2??) break ;;
+    403) if [ "$TARGET" = deadfin ] && [ ${#SETUP_HDR[@]} -eq 0 ]; then setup_link_cookie; fi ;;
+  esac
+  [ "$i" = 90 ] && fail "wizard configuration kept failing for 180s (last HTTP ${code})"
+  sleep 2
+done
+wizard "$BASE/Startup/User" >/dev/null
+wizard -H 'Content-Type: application/json' -X POST "$BASE/Startup/User" \
+  -d "{\"Name\":\"${USER_NAME}\",\"Password\":\"${USER_PASS}\"}" >/dev/null
+wizard -X POST "$BASE/Startup/Complete" >/dev/null
+api_login
 
-  log 'waiting for the scan to surface 3 movies'
-  for i in $(seq 1 60); do
-    COUNT=$(curl -fsS -H "$AUTHED" \
-      "$BASE/Items?userId=${USER_ID}&recursive=true&includeItemTypes=Movie" |
-      python3 -c 'import json,sys; print(json.load(sys.stdin).get("TotalRecordCount",0))' || echo 0)
-    [ "${COUNT:-0}" -ge 3 ] && break
-    [ "$i" = 60 ] && fail "scan stalled at ${COUNT:-0}/3 movies"
-    sleep 2
-  done
-  log "scan complete (${COUNT} movies)"
-  seed_user_data hard
+log 'adding Movies library (internet providers disabled — hermetic)'
+curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' \
+  -X POST "$BASE/Library/VirtualFolders?name=Movies&collectionType=movies&refreshLibrary=true" \
+  -d '{"LibraryOptions":{"EnableInternetProviders":false,"SaveLocalMetadata":false,"PathInfos":[{"Path":"/media/movies"}]}}' >/dev/null
 
-else # ---- deadfin ------------------------------------------------------------
-  PORT="${HARNESS_PORT:-8098}"
-  WEB_PORT="${HARNESS_WEB_PORT:-8099}"
-  BASE="http://localhost:${PORT}"
-
-  # Deadfin master has no external library-creation path and no
-  # POST /System/Configuration, so state is pre-seeded with the gate's own
-  # tooling before the server boots.
-  cat > .state/seed/creds.json <<CREDS
-{"admin_name":"${USER_NAME}","admin_password":"${USER_PASS}","disabled_name":"ghost","disabled_password":"benthic-ghost-1"}
-CREDS
-
-  log 'seeding deadfin state (config + finalreplaybootstrap + goldenrec-seed-user)'
-  # Resume thresholds for 10s media go in FIRST as a partial system.xml: the
-  # bootstrap's config manager loads it (partial-honoring), then rewrites the
-  # canonical file preserving these values alongside IsStartupWizardCompleted.
-  "${COMPOSE[@]}" --profile seed run --rm -T --entrypoint /bin/sh tools -c \
-    'mkdir -p /state/config && printf "%s" "<ServerConfiguration><MinResumePct>1</MinResumePct><MaxResumePct>99</MaxResumePct><MinResumeDurationSeconds>1</MinResumeDurationSeconds></ServerConfiguration>" > /state/config/system.xml' >/dev/null
-  "${COMPOSE[@]}" --profile seed run --rm --entrypoint /usr/local/bin/finalreplaybootstrap tools -state /state >/dev/null
-  "${COMPOSE[@]}" --profile seed run --rm --entrypoint /usr/local/bin/goldenrec-seed-user tools -program-data /state -credentials-file /seed/creds.json >/dev/null
-
-  # The web service (nginx, bind-mounting ../../dist) starts only after the
-  # Vite build below, so docker cannot create a root-owned ./dist before we
-  # own it. Mirrors the jellyfin target's bring-up ordering.
-  log "starting deadfin server on :${PORT}"
-  "${COMPOSE[@]}" up -d --quiet-pull server >/dev/null
-  wait_ping "$BASE" || { "${COMPOSE[@]}" logs --tail 25 server >&2 || true; fail 'deadfin did not come up in 120s'; }
-  api_login
-
-  COUNT=$(curl -fsS -H "$AUTHED" "$BASE/Items?userId=${USER_ID}&recursive=true&includeItemTypes=Movie" |
-    python3 -c 'import json,sys; print(json.load(sys.stdin).get("TotalRecordCount",0))' || echo 0)
-  log "bootstrap scan surfaced ${COUNT:-0} movies"
-  [ "${COUNT:-0}" -ge 3 ] || warn "expected 3 movies, got ${COUNT:-0} — parity finding"
-  seed_user_data soft
+# Loosen resume thresholds for 10s media.
+if ! curl -fsS -H "$AUTHED" "$BASE/System/Configuration" |
+  python3 -c 'import json,sys; c=json.load(sys.stdin); c["MinResumeDurationSeconds"]=1; c["MinResumePct"]=1; c["MaxResumePct"]=99; print(json.dumps(c))' |
+  curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' -X POST "$BASE/System/Configuration" -d @- >/dev/null; then
+  [ "$SEED" = soft ] && warn 'resume thresholds not settable through /System/Configuration — parity finding' || fail 'configuring resume thresholds failed'
 fi
 
-# ---- 3. browser acceptance --------------------------------------------------
+log 'waiting for the scan to surface 3 movies'
+for i in $(seq 1 60); do
+  COUNT=$(curl -fsS -H "$AUTHED" \
+    "$BASE/Items?userId=${USER_ID}&recursive=true&includeItemTypes=Movie" |
+    python3 -c 'import json,sys; print(json.load(sys.stdin).get("TotalRecordCount",0))' || echo 0)
+  [ "${COUNT:-0}" -ge 3 ] && break
+  [ "$i" = 60 ] && fail "scan stalled at ${COUNT:-0}/3 movies"
+  sleep 2
+done
+log "scan complete (${COUNT} movies)"
+seed_user_data "$SEED"
+
+# ---- 4. browser acceptance --------------------------------------------------
 # Playwright runs inside the pinned browser image as a service on the harness's
 # own compose network — not on the host. `npx playwright install` fetches
 # generic-glibc browser bundles that cannot exec on NixOS (no
@@ -226,9 +222,6 @@ fi
 # native Linux docker, colima, and Docker Desktop, none of which agree on what
 # "the host" means from inside a container. The image tag must track
 # @playwright/test in package.json — bump both together.
-cd "$REPO_DIR"
-log 'building app'
-npm run build >/dev/null
 mkdir -p "$REPO_DIR/e2e/evidence/$TARGET"
 
 # The browser writes screenshots and traces into the bind-mounted repo, so it
@@ -237,14 +230,25 @@ mkdir -p "$REPO_DIR/e2e/evidence/$TARGET"
 HOST_UID=$(id -u) HOST_GID=$(id -g)
 export HOST_UID HOST_GID
 
-# dist only exists after the build above; an nginx started before it
-# would have had docker create ./dist root-owned underneath us. Both
-# targets defer the static app front to here so Playwright sees a
-# user-owned bundle.
 log 'starting the static app front'
 "${COMPOSE[@]}" up -d --quiet-pull web >/dev/null
 
-log 'running Playwright (pinned browser image, on the harness network)'
-"${COMPOSE[@]}" --profile test run --rm -T playwright
+if [ "$TARGET" = jellyfin ]; then
+  log 'running Playwright (pinned browser image, cross-origin)'
+  "${COMPOSE[@]}" --profile test run --rm -T playwright
+else
+  log 'running Playwright: app served by Deadfin at /web/ (same origin)'
+  "${COMPOSE[@]}" --profile test run --rm -T playwright
+  # The first pass leaves Pressure Hull part-watched; put the seeded user
+  # data back for the second pass.
+  PH_ID=$(movie_id 'Pressure Hull')
+  { [ -n "$PH_ID" ] && curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' \
+    -X POST "$BASE/UserItems/${PH_ID}/UserData?userId=${USER_ID}" \
+    -d '{"PlaybackPositionTicks":0,"Played":false}' >/dev/null; } || warn 'could not reset Pressure Hull between passes'
+  seed_user_data "$SEED"
+  mkdir -p "$REPO_DIR/e2e/evidence/deadfin-cross"
+  log 'running Playwright: static app front, API on another origin'
+  "${COMPOSE[@]}" --profile test run --rm -T playwright-cross
+fi
 
 log "PASS — evidence in e2e/evidence/$TARGET/"

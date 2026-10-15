@@ -178,14 +178,16 @@ make accept-deadfin    # the same suite against a Deadfin image
 ```
 
 These need Docker. The harness makes a small media library with ffmpeg,
-starts the server, completes the setup wizard through the API, and drives
-the built app in Playwright: sign in, home, item page, playback.
-Screenshots go to `e2e/evidence/`. The tests make no requests to outside
-services. Set `DEADFIN_IMAGE` to pick the Deadfin image for
-`make accept-deadfin`, for example `ghcr.io/deadfin-org/deadfin:vX.Y.Z`.
-`make accept-deadfin` also needs `DEADFIN_TOOLS_IMAGE`, an image with
-Deadfin's test seeding tools that is not published yet, so for now only
-`make accept` runs outside the maintainer's CI.
+starts the server, completes the setup wizard and adds the library through
+the API, and drives the built app in Playwright: sign in, home, item page,
+playback. Screenshots go to `e2e/evidence/`. The tests make no requests to
+outside services.
+
+`make accept-deadfin` needs `DEADFIN_IMAGE`, for example
+`DEADFIN_IMAGE=ghcr.io/deadfin-org/deadfin:vX.Y.Z make accept-deadfin`. It
+runs the suite twice: with the app served by Deadfin from its `/web`
+directory, then from a separate origin. `ACCEPT_STRICT=1` turns seeding
+problems into failures instead of warnings.
 
 A test that passes against Jellyfin and fails against Deadfin points to a
 Deadfin server bug. Report it in the

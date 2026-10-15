@@ -1,8 +1,9 @@
 import { defineConfig } from '@playwright/test';
 
-// Stock-jellyfin target: app from vite preview (cross-origin API).
-// Deadfin target: app + API same-origin behind the harness nginx —
-// PW_BASE_URL points there and no preview server is started.
+// The harness sets PW_BASE_URL: the static app front (http://localhost/) or
+// Deadfin's own /web/ (http://localhost:8096/web/). Specs navigate with
+// relative URLs ('./#/login') so both resolve. Without PW_BASE_URL (a local
+// run against your own server), vite preview serves the app.
 const baseURL = process.env.PW_BASE_URL ?? 'http://localhost:5211';
 
 export default defineConfig({

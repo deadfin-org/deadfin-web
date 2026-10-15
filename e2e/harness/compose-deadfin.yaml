@@ -1,44 +1,68 @@
-# Deadfin acceptance target — the client as parity probe.
+# Deadfin acceptance target. Seeded through the public API like the jellyfin
+# target (accept.sh), so any published Deadfin image works: set DEADFIN_IMAGE.
 #
-# Topology mirrors a production deployment: nginx serves the built app and
-# proxies API paths to deadfin SAME-ORIGIN (also required because cross-origin
-# is blocked by the Deadfin CORS parity gap). The stock-jellyfin target
-# (compose.yaml) keeps its cross-origin path.
+# Two topologies, one server:
+#   playwright       — the alpha topology: Deadfin serves the built app from
+#                      its own web directory at /web/, same origin as the API.
+#   playwright-cross — a static app front on another origin (no proxy), the
+#                      cross-origin path the README promises (CORS, D-21).
 #
 # Harness containers run as root to sidestep named-volume ownership; a
 # production pod runs uid 65532. State is a named volume (VirtioFS bind mounts
 # race marker/db creation on Docker Desktop — same lesson as the jellyfin
-# harness).
+# harness). dist/ is bind-mounted over <data>/web read-only; accept.sh builds
+# it before the server starts, because Deadfin registers /web only when the
+# directory exists at startup.
 services:
   server:
     image: ${DEADFIN_IMAGE:?set DEADFIN_IMAGE to the Deadfin server image under test}
     user: '0:0'
     command: ['--listen', '0.0.0.0:8096']
     environment:
+      DEADFIN_DATA_DIR: /state
+      # Images before deadfin #575 read only this name.
       JELLYFIN_DATA_DIR: /state
     ports:
       - '${HARNESS_PORT:-8098}:8096'
     volumes:
       - dfstate:/state
+      - ../../dist:/state/web:ro
       - ./.state/media:/media:ro
 
+  # Static front for the cross-origin pass: same config as the jellyfin target.
   web:
     image: nginx:1.29-alpine
-    ports:
-      - '${HARNESS_WEB_PORT:-8099}:80'
     volumes:
       - ../../dist:/srv/app:ro
-      - ./nginx-deadfin.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx-app.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - server
 
-  # The browser — same contract as the jellyfin target's playwright service.
-  # network_mode joins the nginx netns so the app answers on
-  # http://localhost: the app calls crypto.randomUUID, and WebCrypto exists only
-  # in a secure context (https or http://localhost, nothing else). Here that
-  # address is also the same origin as the API, which is this target's whole
-  # point. Version must track @playwright/test in package.json.
+  # The browser, in the server's network namespace: the app and the API are
+  # both http://localhost:8096 (a secure context, which WebCrypto needs).
+  # Version must track @playwright/test in package.json.
   playwright:
+    image: mcr.microsoft.com/playwright:v1.62.0-noble
+    profiles: ['test']
+    ipc: host
+    network_mode: 'service:server'
+    user: '${HOST_UID:-0}:${HOST_GID:-0}'
+    working_dir: /work
+    environment:
+      HOME: /tmp
+      CI: '1'
+      PW_BASE_URL: http://localhost:8096/web/
+      HARNESS_SERVER: http://localhost:8096
+      EVIDENCE_DIR: /work/e2e/evidence/deadfin
+    volumes:
+      - ../../:/work
+    command: ['npx', 'playwright', 'test', '--config', 'e2e/playwright.config.ts']
+    depends_on:
+      - server
+
+  # The browser in the static front's namespace: app at http://localhost,
+  # API at http://server:8096.
+  playwright-cross:
     image: mcr.microsoft.com/playwright:v1.62.0-noble
     profiles: ['test']
     ipc: host
@@ -49,24 +73,13 @@ services:
       HOME: /tmp
       CI: '1'
       PW_BASE_URL: http://localhost
-      HARNESS_SERVER: http://localhost
-      EVIDENCE_DIR: /work/e2e/evidence/deadfin
+      HARNESS_SERVER: http://server:8096
+      EVIDENCE_DIR: /work/e2e/evidence/deadfin-cross
     volumes:
       - ../../:/work
     command: ['npx', 'playwright', 'test', '--config', 'e2e/playwright.config.ts']
     depends_on:
       - web
-
-  # Seeding sidecar (never long-running): deadfin's own gate tooling.
-  tools:
-    image: ${DEADFIN_TOOLS_IMAGE:?set DEADFIN_TOOLS_IMAGE to the Deadfin replay-tools image}
-    profiles: ['seed']
-    user: '0:0'
-    entrypoint: ['/bin/true']
-    volumes:
-      - dfstate:/state
-      - ./.state/media:/media:ro
-      - ./.state/seed:/seed:ro
 
 volumes:
   dfstate:

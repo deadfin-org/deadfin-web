@@ -4,7 +4,7 @@ const SERVER = process.env.HARNESS_SERVER ?? 'http://localhost:8097';
 const EVIDENCE = (process.env.EVIDENCE_DIR ?? new URL('./evidence', import.meta.url).pathname) + '/';
 
 async function descend(page: Page) {
-  await page.goto('/#/login');
+  await page.goto('./#/login');
   await expect(page.getByRole('heading', { name: 'DEADFIN' })).toBeVisible();
   await expect(page.locator('.login-panel')).toHaveCSS('opacity', '1');
   await page.getByLabel('server').fill(SERVER);
@@ -15,7 +15,7 @@ async function descend(page: Page) {
 }
 
 test('descend: connect → login → home grid renders the library', async ({ page }) => {
-  await page.goto('/#/login');
+  await page.goto('./#/login');
   await expect(page.getByRole('heading', { name: 'DEADFIN' })).toBeVisible();
   await expect(page.locator('.login-panel')).toHaveCSS('opacity', '1');
   await page.getByLabel('server').fill(SERVER);
@@ -43,7 +43,7 @@ test('descend: connect → login → home grid renders the library', async ({ pa
 });
 
 test('bad credentials fault visibly, no navigation', async ({ page }) => {
-  await page.goto('/#/login');
+  await page.goto('./#/login');
   await page.getByLabel('server').fill(SERVER);
   await page.getByLabel('operator').fill('abyss');
   await page.getByLabel('passphrase').fill('wrong-passphrase');
@@ -160,7 +160,7 @@ test('direct play, controls, and server-verified progress reporting', async ({ p
     .toBeGreaterThan(0);
 
   // Resume path: the seeded in-progress movie starts at its saved depth (~4s).
-  await page.goto('/');
+  await page.goto('./');
   await page.getByTestId('resume-shelf').getByTestId('item-link').click();
   await page.getByTestId('action-resume').click();
   await expect(page).toHaveURL(/\/play\/.*\?t=/);
