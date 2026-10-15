@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../api/AuthContext';
 import type { Api } from '../api/client';
 import { countLabel, fetchUserViews, libraryItemsQuery } from '../api/library';
+import { describeServer, fetchServerIdentity } from '../api/serverBuild';
 import { fetchNextUp } from '../api/tv';
 import { describeWebBuild, webBuild } from '../build';
+import { About } from '../components/About';
 import { ItemCard } from '../components/ItemCard';
 import { SharkMark } from '../components/SharkMark';
 import './home.css';
@@ -31,6 +33,7 @@ export function Home() {
           <Link className="home-signout readout" to="/quickconnect" data-testid="quick-connect-link">
             sign in a device
           </Link>
+          <AboutMenu api={api} serverUrl={session.serverUrl} />
           <button className="home-signout readout" onClick={signOut}>
             surface ↑
           </button>
@@ -46,7 +49,7 @@ export function Home() {
   );
 }
 
-function ConnectionReadout({ api, serverUrl }: { api: Api; serverUrl: string }) {
+function useServerInfo(api: Api, serverUrl: string) {
   const info = useQuery({
     queryKey: ['system-info', serverUrl],
     queryFn: async () => {
@@ -56,13 +59,29 @@ function ConnectionReadout({ api, serverUrl }: { api: Api; serverUrl: string }) 
     },
     staleTime: 60_000,
   });
+  const identity = useQuery({
+    queryKey: ['server-identity', serverUrl],
+    queryFn: () => fetchServerIdentity(api, serverUrl),
+    staleTime: 5 * 60_000,
+  });
+  return { info: info.data, identity: identity.data };
+}
+
+function ConnectionReadout({ api, serverUrl }: { api: Api; serverUrl: string }) {
+  const { info, identity } = useServerInfo(api, serverUrl);
   const host = serverUrl.replace(/^https?:\/\//, '');
   return (
     <span className="home-conn readout" data-testid="connection">
       <span className="home-conn-dot" aria-hidden="true" />
-      {info.data ? `${info.data.ServerName ?? host} · v${info.data.Version ?? '?'}` : host}
+      {info?.ServerName ?? host}
+      {identity && <span data-testid="server-build"> · {describeServer(identity)}</span>}
     </span>
   );
+}
+
+function AboutMenu({ api, serverUrl }: { api: Api; serverUrl: string }) {
+  const { identity } = useServerInfo(api, serverUrl);
+  return <About serverUrl={serverUrl} identity={identity} />;
 }
 
 /** Web bundle build identity readout — same object the auth Version header uses (issue #26, §9(a)). */

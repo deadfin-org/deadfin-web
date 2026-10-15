@@ -71,6 +71,7 @@ services:
       PW_BASE_URL: http://localhost:8096/web/
       HARNESS_SERVER: http://localhost:8096
       EVIDENCE_DIR: /work/e2e/evidence/deadfin
+      HARNESS_PRODUCT: Deadfin
     volumes:
       - ../../:/work
     command: ['npx', 'playwright', 'test', '--config', 'e2e/playwright.config.ts']
@@ -92,6 +93,7 @@ services:
       PW_BASE_URL: http://localhost
       HARNESS_SERVER: http://server:8096
       EVIDENCE_DIR: /work/e2e/evidence/deadfin-cross
+      HARNESS_PRODUCT: Deadfin
     volumes:
       - ../../:/work
     command: ['npx', 'playwright', 'test', '--config', 'e2e/playwright.config.ts']

@@ -1,0 +1,43 @@
+.about {
+  position: relative;
+}
+
+.about > summary {
+  list-style: none;
+}
+
+.about > summary::-webkit-details-marker {
+  display: none;
+}
+
+.about-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  width: min(360px, calc(100vw - 32px));
+  padding: 16px;
+  background: var(--abyss-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-raise);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.about-list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+}
+
+.about-list dt {
+  color: var(--steel-dim);
+}
+
+.about-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

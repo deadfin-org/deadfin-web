@@ -30,6 +30,13 @@ test('descend: connect → login → home grid renders the library', async ({ pa
 
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByTestId('connection')).toBeVisible();
+  // The header names the real server build, not only the compatibility version.
+  if (process.env.HARNESS_PRODUCT) {
+    await expect(page.getByTestId('server-build')).toContainText(process.env.HARNESS_PRODUCT);
+  }
+  await page.getByText('about', { exact: true }).click();
+  await expect(page.getByTestId('about-server')).toContainText(process.env.HARNESS_PRODUCT ?? '');
+  await expect(page.getByTestId('about-web')).toContainText('web ');
 
   // The Movies shelf surfaces with all three seeded movies…
   const moviesShelf = shelf(page, 'Movies');
