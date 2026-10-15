@@ -189,6 +189,11 @@ runs the suite twice: with the app served by Deadfin from its `/web`
 directory, then from a separate origin. `ACCEPT_STRICT=1` turns seeding
 problems into failures instead of warnings.
 
+CI runs both on every pull request, on master and on release tags. The
+Deadfin run uses the image named in the workflow (`DEADFIN_IMAGE_DEFAULT`).
+On pull requests and master a Deadfin failure is reported but does not fail
+the run; on a release tag it does.
+
 A test that passes against Jellyfin and fails against Deadfin points to a
 Deadfin server bug. Report it in the
 [Deadfin issues](https://github.com/deadfin-org/deadfin/issues).
