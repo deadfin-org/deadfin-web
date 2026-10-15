@@ -1,0 +1,16 @@
+.search-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--abyss-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  color: inherit;
+  font: inherit;
+  font-size: 1.05rem;
+  padding: 10px 14px;
+}
+
+.search-input:focus-visible {
+  outline: none;
+  border-color: var(--biolum);
+}

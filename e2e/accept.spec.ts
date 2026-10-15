@@ -367,3 +367,24 @@ test('quick connect: a waiting device is signed in by its code', async ({ page }
   const state = await page.request.get(`${SERVER}/QuickConnect/Connect?secret=${secret}`, { headers: tv });
   expect(((await state.json()) as { Authenticated?: boolean }).Authenticated).toBe(true);
 });
+
+test('search: results grouped by kind, links to the item, empty state', async ({ page }) => {
+  await descend(page);
+  await page.getByTestId('search-link').click();
+  await page.getByLabel('Search').fill('trench');
+  await expect(page).toHaveURL(/search\?q=trench/);
+  const movies = page.getByTestId('search-group').filter({ hasText: 'Movies' });
+  await expect(movies.getByText('Voyage to the Trench')).toBeVisible();
+  await expect(movies.getByTestId('poster')).toHaveCount(1);
+  await page.screenshot({ path: `${EVIDENCE}09-search.png`, fullPage: true });
+
+  await movies.getByTestId('item-link').click();
+  await expect(page).toHaveURL(/\/item\//);
+  await expect(page.getByRole('heading', { name: /Voyage to the Trench/ })).toBeVisible();
+
+  // Back keeps the search; a term nothing matches says so.
+  await page.goBack();
+  await expect(page.getByLabel('Search')).toHaveValue('trench');
+  await page.getByLabel('Search').fill('zzqx-nothing');
+  await expect(page.getByTestId('search-empty')).toBeVisible();
+});

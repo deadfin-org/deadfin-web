@@ -24,6 +24,9 @@ export function Home() {
         <ConnectionReadout api={api} serverUrl={session.serverUrl} />
         <WebBuildReadout />
         <div className="home-operator">
+          <Link className="home-signout readout" to="/search" data-testid="search-link">
+            search
+          </Link>
           <span className="readout">{session.userName}</span>
           <Link className="home-signout readout" to="/quickconnect" data-testid="quick-connect-link">
             sign in a device
