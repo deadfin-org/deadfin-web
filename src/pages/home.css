@@ -1,0 +1,141 @@
+.home {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.home-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px clamp(16px, 4vw, 40px);
+  background: rgba(6, 11, 18, 0.82);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.home-ident {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.home-word {
+  font-weight: 900;
+  font-size: 15px;
+  letter-spacing: 0.16em;
+}
+
+.home-conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline: auto;
+}
+
+.home-conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--biolum);
+  box-shadow: 0 0 8px var(--biolum);
+  animation: conn-breathe 2.6s ease-in-out infinite;
+}
+
+@keyframes conn-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.home-operator {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.home-operator > .readout {
+  color: var(--steel);
+}
+
+.home-build {
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.home-signout {
+  background: none;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.home-signout:hover {
+  border-color: var(--biolum);
+  color: var(--biolum);
+}
+
+.home-main {
+  padding: clamp(20px, 3vw, 36px) clamp(16px, 4vw, 40px) 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.home-status {
+  padding: 40px 0;
+  text-align: center;
+}
+
+.shelf {
+  animation: shelf-rise 0.6s var(--ease-surface) both;
+}
+
+@keyframes shelf-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.shelf-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 14px;
+}
+
+.shelf-name {
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: 0.02em;
+}
+
+.shelf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+  gap: 18px 14px;
+}
+
+.card-link {
+  display: block;
+  color: inherit;
+  min-width: 0;
+  border-radius: var(--r-md);
+}
+
+@media (min-width: 1400px) {
+  .shelf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+}

@@ -1,0 +1,135 @@
+.login {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 48px 20px;
+  position: relative;
+}
+
+/* depth gauge down the left edge — the page as water column */
+.login-depthticks {
+  position: fixed;
+  inset: 0 auto 0 max(12px, 2vw);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 28px 0;
+  text-align: right;
+  user-select: none;
+}
+
+.login-depthticks span {
+  opacity: 0.55;
+}
+
+@media (max-width: 700px) {
+  .login-depthticks {
+    display: none;
+  }
+}
+
+.login-panel {
+  width: min(380px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: surface-rise 0.7s var(--ease-surface) both;
+}
+
+@keyframes surface-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.login-mark {
+  align-self: center;
+}
+
+.mark-ping .mark-ring {
+  transform-origin: 200px 205px;
+  animation: ring-spin 1.4s linear infinite;
+}
+
+@keyframes ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.login-word {
+  margin: 4px 0 0;
+  text-align: center;
+  font-weight: 900;
+  font-size: 40px;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  /* the lineage gradient lives in the word: drowned purple sinking to teal */
+  background: var(--grad-lineage);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.login-sub {
+  margin: 0 0 18px;
+  text-align: center;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field input {
+  background: var(--abyss-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  padding: 11px 12px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.field input:focus-visible {
+  border-color: var(--biolum);
+  box-shadow: var(--glow-biolum);
+}
+
+.login-error {
+  margin: 0;
+  color: var(--alarm);
+}
+
+.login-submit {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--biolum);
+  border-radius: var(--r-sm);
+  background: var(--biolum-dim);
+  color: var(--biolum);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s, color 0.2s;
+}
+
+.login-submit:hover:not(:disabled) {
+  background: var(--biolum);
+  color: var(--abyss);
+  box-shadow: 0 0 28px rgba(63, 224, 197, 0.35);
+}
+
+.login-submit:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}

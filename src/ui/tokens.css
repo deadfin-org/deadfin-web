@@ -1,0 +1,37 @@
+/* Deadfin design tokens — "abyssal engineering report".
+   Dark-only by decree (brand direction 2026-07-28): the abyss has no light mode. */
+
+:root {
+  color-scheme: dark;
+
+  /* depth field */
+  --abyss: #060b12;        /* page floor */
+  --abyss-1: #0a1220;      /* raised surface */
+  --abyss-2: #101a2c;      /* interactive surface */
+  --hairline: #1c2a40;     /* borders, rules */
+
+  /* ink */
+  --bone: #e8eef2;         /* primary text */
+  --steel: #8fa3b8;        /* secondary text */
+  --steel-dim: #56687c;    /* tertiary, labels at rest */
+
+  /* light sources */
+  --biolum: #3fe0c5;       /* bioluminescent teal — the only living light */
+  --biolum-dim: rgba(63, 224, 197, 0.14);
+  --drowned: #7b68c8;      /* jellyfin lineage purple — gradients only, never solo */
+  --alarm: #ff6b5e;        /* fault readout */
+
+  --grad-lineage: linear-gradient(135deg, var(--drowned), var(--biolum));
+
+  /* type */
+  --font-display: 'Archivo', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  /* rhythm */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --shadow-raise: 0 10px 32px rgba(0, 0, 0, 0.55);
+  --glow-biolum: 0 0 0 1px rgba(63, 224, 197, 0.55), 0 0 24px rgba(63, 224, 197, 0.18);
+
+  --ease-surface: cubic-bezier(0.22, 1, 0.36, 1);
+}

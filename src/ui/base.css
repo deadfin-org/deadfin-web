@@ -1,0 +1,70 @@
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--abyss);
+  color: var(--bone);
+  font-family: var(--font-display);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* faint water column: light dies ~30% down the page */
+  background-image:
+    radial-gradient(120% 60% at 50% -10%, #0d1a2b 0%, transparent 60%),
+    radial-gradient(60% 40% at 85% 110%, rgba(123, 104, 200, 0.05) 0%, transparent 70%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: var(--biolum);
+  color: var(--abyss);
+}
+
+a {
+  color: var(--biolum);
+  text-decoration: none;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--glow-biolum);
+  border-radius: var(--r-sm);
+}
+
+/* mono instrument label: the repeated voice of the readouts */
+.readout {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--steel-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

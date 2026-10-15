@@ -1,0 +1,213 @@
+.detail {
+  min-height: 100%;
+  position: relative;
+}
+
+/* the surface, seen from below: backdrop light dying into the abyss */
+.detail-backdrop {
+  position: absolute;
+  inset: 0 0 auto;
+  height: min(52vh, 460px);
+  overflow: hidden;
+  z-index: 0;
+}
+
+.detail-backdrop img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.45;
+  animation: backdrop-sink 1s ease-out both;
+}
+
+@keyframes backdrop-sink {
+  from {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+  to {
+    opacity: 0.45;
+    transform: none;
+  }
+}
+
+.detail-backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(6, 11, 18, 0.25) 0%, rgba(6, 11, 18, 0.7) 60%, var(--abyss) 100%);
+}
+
+.detail-nav {
+  position: relative;
+  z-index: 2;
+  padding: 18px clamp(16px, 4vw, 40px);
+}
+
+.detail-back {
+  color: var(--steel);
+  transition: color 0.2s;
+}
+
+.detail-back:hover {
+  color: var(--biolum);
+}
+
+.detail-body {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(160px, 230px) 1fr;
+  gap: clamp(20px, 3vw, 40px);
+  padding: clamp(60px, 14vh, 140px) clamp(16px, 4vw, 40px) 80px;
+  max-width: 1100px;
+}
+
+@media (max-width: 640px) {
+  .detail-body {
+    grid-template-columns: 1fr;
+  }
+  .detail-poster {
+    max-width: 200px;
+  }
+}
+
+.detail-poster {
+  animation: surface-rise 0.7s var(--ease-surface) both;
+}
+
+.detail-info {
+  min-width: 0;
+  animation: surface-rise 0.7s var(--ease-surface) 0.08s both;
+}
+
+.detail-title {
+  margin: 0 0 6px;
+  font-weight: 900;
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+}
+
+.detail-meta {
+  margin: 0 0 18px;
+  color: var(--steel);
+}
+
+.detail-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.progress-track {
+  flex: 0 1 280px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--abyss-2);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--biolum);
+  box-shadow: 0 0 8px rgba(63, 224, 197, 0.6);
+}
+
+.detail-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+}
+
+.action-primary {
+  padding: 9px 18px;
+  border: 1px solid var(--biolum);
+  border-radius: var(--r-sm);
+  background: var(--biolum-dim);
+  color: var(--biolum);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+
+.action-primary:hover {
+  background: var(--biolum);
+  color: var(--abyss);
+  box-shadow: 0 0 22px rgba(63, 224, 197, 0.35);
+}
+
+.action-toggle {
+  padding: 9px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--abyss-1);
+  color: var(--steel);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.action-toggle:hover:not(:disabled) {
+  border-color: var(--biolum);
+  color: var(--biolum);
+}
+
+.action-toggle.is-on {
+  border-color: var(--biolum);
+  color: var(--biolum);
+  background: var(--biolum-dim);
+}
+
+.action-toggle:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.detail-genres {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 18px;
+}
+
+.genre-chip {
+  padding: 4px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+}
+
+.detail-overview {
+  margin: 0 0 26px;
+  max-width: 640px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--bone);
+}
+
+.detail-people h2 {
+  margin: 0 0 10px;
+}
+
+.detail-people ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px 20px;
+}
+
+.person-name {
+  font-weight: 600;
+  font-size: 14px;
+}

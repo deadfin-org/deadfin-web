@@ -1,0 +1,136 @@
+.player {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  overflow: hidden;
+}
+
+.player-faulted {
+  display: grid;
+  place-items: center;
+  background: var(--abyss);
+}
+
+.player-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.player-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(6, 11, 18, 0.6) 0%, transparent 18%),
+    linear-gradient(0deg, rgba(6, 11, 18, 0.75) 0%, transparent 22%);
+  opacity: 1;
+  transition: opacity 0.35s;
+}
+
+.player-controls {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 18px clamp(16px, 3vw, 32px) 22px;
+  transition: opacity 0.35s;
+}
+
+.controls-hidden .player-controls,
+.controls-hidden .player-shade {
+  opacity: 0;
+}
+
+.controls-hidden {
+  cursor: none;
+}
+
+.player-back {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--steel);
+  cursor: pointer;
+  padding: 6px 0;
+  transition: color 0.2s;
+}
+
+.player-back:hover {
+  color: var(--biolum);
+}
+
+.player-bottom {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.player-toggle {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--biolum);
+  background: rgba(6, 11, 18, 0.6);
+  color: var(--biolum);
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.player-toggle:hover {
+  background: var(--biolum-dim);
+  box-shadow: 0 0 18px rgba(63, 224, 197, 0.3);
+}
+
+/* the depth track */
+.player-track {
+  flex: 1;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+}
+
+.player-track::before {
+  content: '';
+  position: absolute;
+  inset: 9px 0;
+  border-radius: 2px;
+  background: rgba(143, 163, 184, 0.25);
+}
+
+.player-track-fill {
+  position: absolute;
+  inset: 9px auto 9px 0;
+  border-radius: 2px;
+  background: var(--biolum);
+  box-shadow: 0 0 10px rgba(63, 224, 197, 0.65);
+  pointer-events: none;
+}
+
+.player-timecode {
+  flex: none;
+  color: var(--steel);
+}
+
+.player-fullscreen {
+  flex: none;
+  background: none;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  color: var(--steel);
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.player-fullscreen:hover {
+  border-color: var(--biolum);
+  color: var(--biolum);
+}

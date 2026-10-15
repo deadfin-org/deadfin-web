@@ -1,0 +1,10 @@
+node_modules/
+dist/
+e2e/evidence/
+e2e/harness/.state/
+test-results/
+playwright-report/
+*.local
+.env
+.env.*
+.DS_Store

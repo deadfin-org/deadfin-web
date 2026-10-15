@@ -1,0 +1,377 @@
+# Release assets for ghcr.io/deadfin-org/deadfin-web.
+#
+# A vX.Y.Z or vX.Y.Z-rc.N tag on a master commit builds dist once, checks
+# that dist/build.json carries the release (or rc) identity, publishes dist
+# as a multi-arch busybox image with the bundle at /deadfin-web, and attaches
+# deadfin-web-<version>.tar.gz plus its sha256 to a GitHub Release. An rc tag
+# makes a prerelease. The attest job signs SLSA build provenance for the
+# image index and the tarball, and an SPDX SBOM attestation per architecture
+# digest; the SBOMs are release assets too.
+#
+# Keep the trigger to tags: these jobs hold the packages: write and
+# contents: write tokens.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/deadfin-org/deadfin-web
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.identity.outputs.tag }}
+      version: ${{ steps.identity.outputs.version }}
+      channel: ${{ steps.identity.outputs.channel }}
+    steps:
+      # actions/checkout v4.2.2. Full history: the tagged commit must be on
+      # origin/master, and the build probes refs/tags/<tag>.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Derive and validate the release identity
+        id: identity
+        env:
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          tag=${REF#refs/tags/}
+          echo "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$' \
+            || { echo "::error::$tag is not a release or rc tag"; exit 1; }
+          case "$tag" in *-rc.*) channel=rc ;; *) channel=release ;; esac
+          [ "$(git rev-parse "${REF}^{commit}")" = "$SHA" ] \
+            || { echo "::error::tag and checkout differ"; exit 1; }
+          git merge-base --is-ancestor "$SHA" refs/remotes/origin/master \
+            || { echo "::error::release commit is not on master"; exit 1; }
+          printf 'tag=%s\nversion=%s\nchannel=%s\nsource_date_epoch=%s\n' \
+            "$tag" "${tag#v}" "$channel" "$(git show -s --format=%ct "$SHA")" | tee -a "$GITHUB_OUTPUT"
+
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Unit tests + strict build
+        env:
+          DEADFIN_WEB_VERSION: ${{ steps.identity.outputs.version }}
+          DEADFIN_WEB_COMMIT: ${{ github.sha }}
+          SOURCE_DATE_EPOCH: ${{ steps.identity.outputs.source_date_epoch }}
+        run: npm ci --no-audit --no-fund && npm test && npm run build
+
+      - name: Assert the build identity
+        env:
+          CHANNEL: ${{ steps.identity.outputs.channel }}
+        run: |
+          set -eu
+          cat dist/build.json
+          grep -q "\"Channel\": *\"$CHANNEL\"" dist/build.json \
+            || { echo "::error::tag build did not produce a $CHANNEL identity"; exit 1; }
+
+      - name: Package dist
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+          SOURCE_DATE_EPOCH: ${{ steps.identity.outputs.source_date_epoch }}
+        run: |
+          set -eu
+          mkdir -p out
+          name="deadfin-web-${VERSION}"
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@${SOURCE_DATE_EPOCH}" \
+            --transform "s,^dist,${name}," -cf - dist | gzip -n > "out/${name}.tar.gz"
+          (cd out && sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256" && cat "${name}.tar.gz.sha256")
+
+      # actions/upload-artifact v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release
+          path: |
+            dist
+            out
+          retention-days: 1
+
+  # dist is static files: one buildx run assembles both platforms without
+  # emulation (FROM + COPY only).
+  image:
+    name: image
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      amd64: ${{ steps.arch.outputs.amd64 }}
+      arm64: ${{ steps.arch.outputs.arm64 }}
+    steps:
+      # actions/download-artifact v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release
+          path: ${{ runner.temp }}/release
+
+      - name: Write the assets Dockerfile
+        working-directory: ${{ runner.temp }}/release
+        run: printf 'FROM busybox:1.37-musl\nCOPY dist /deadfin-web\n' > Dockerfile
+
+      # docker/setup-buildx-action v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      # docker/login-action v3
+      - name: Log in to ghcr.io
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # docker/build-push-action v6
+      - name: Build and push the multi-arch image
+        id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: ${{ runner.temp }}/release
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.IMAGE }}:${{ needs.build.outputs.tag }}
+            ${{ env.IMAGE }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.build.outputs.version }}
+            org.opencontainers.image.licenses=GPL-2.0-only
+            org.opencontainers.image.description=deadfin-web static bundle at /deadfin-web
+
+      - name: Record the per-architecture digests
+        id: arch
+        env:
+          REF: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
+        run: |
+          set -eu
+          raw=$(docker buildx imagetools inspect "$REF" --raw)
+          for arch in amd64 arm64; do
+            d=$(printf '%s' "$raw" | jq -r --arg a "$arch" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $a) | .digest')
+            [ -n "$d" ] || { echo "::error::no linux/$arch manifest in $REF"; exit 1; }
+            echo "$arch=$d" | tee -a "$GITHUB_OUTPUT"
+          done
+
+      - name: Smoke-test the published image
+        env:
+          REF: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
+          TAG: ${{ needs.build.outputs.tag }}
+          CHANNEL: ${{ needs.build.outputs.channel }}
+        run: |
+          set -eu
+          docker run --rm --platform linux/amd64 "$REF" cat /deadfin-web/build.json | tee build.json
+          grep -q "\"Channel\": *\"$CHANNEL\"" build.json
+          grep -q "\"Revision\": *\"$GITHUB_SHA\"" build.json
+          {
+            echo "### ${IMAGE}:${TAG}"
+            echo
+            echo "\`${REF}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # anchore/sbom-action v0.24.2. SPDX SBOM of each smoke-tested
+      # architecture digest. The attest job attests them and the release job
+      # attaches them.
+      - name: SBOM for the amd64 digest
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.arch.outputs.amd64 }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+          format: spdx-json
+          output-file: ${{ runner.temp }}/sbom/deadfin-web-${{ needs.build.outputs.tag }}-linux-amd64.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
+
+      # anchore/sbom-action v0.24.2
+      - name: SBOM for the arm64 digest
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.arch.outputs.arm64 }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+          format: spdx-json
+          output-file: ${{ runner.temp }}/sbom/deadfin-web-${{ needs.build.outputs.tag }}-linux-arm64.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
+
+      # actions/upload-artifact v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sbom
+          path: ${{ runner.temp }}/sbom/
+          if-no-files-found: error
+          retention-days: 7
+
+  # The only job that can sign: id-token and attestations: write sign and
+  # store the attestations; packages: write pushes them beside the image.
+  attest:
+    name: attest
+    needs: [build, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      # actions/download-artifact v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release
+          path: ${{ runner.temp }}/release
+
+      # actions/download-artifact v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sbom
+          path: ${{ runner.temp }}/sbom
+
+      # docker/login-action v3
+      - name: Log in to ghcr.io
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # actions/attest-build-provenance v4.2.2. SLSA build provenance for the
+      # multi-arch index, stored on GitHub and pushed to ghcr.io.
+      - name: Attest image build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ needs.image.outputs.digest }}
+          push-to-registry: true
+
+      # actions/attest-build-provenance v4.2.2 with an SPDX predicate: one
+      # SBOM attestation per architecture digest.
+      - name: Attest the amd64 SBOM
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ needs.image.outputs.amd64 }}
+          predicate-type: https://spdx.dev/Document/v2.3
+          predicate-path: ${{ runner.temp }}/sbom/deadfin-web-${{ needs.build.outputs.tag }}-linux-amd64.spdx.json
+          push-to-registry: true
+
+      - name: Attest the arm64 SBOM
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ needs.image.outputs.arm64 }}
+          predicate-type: https://spdx.dev/Document/v2.3
+          predicate-path: ${{ runner.temp }}/sbom/deadfin-web-${{ needs.build.outputs.tag }}-linux-arm64.spdx.json
+          push-to-registry: true
+
+      # actions/attest-build-provenance v4.2.2. SLSA build provenance for the
+      # release tarball.
+      - name: Attest tarball build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-path: ${{ runner.temp }}/release/out/deadfin-web-${{ needs.build.outputs.version }}.tar.gz
+
+  release:
+    name: release
+    needs: [build, image, attest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      # actions/checkout v4.2.2, for CHANGELOG.md when the repository has one.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      # actions/download-artifact v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release
+          path: ${{ runner.temp }}/release
+
+      # actions/download-artifact v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sbom
+          path: ${{ runner.temp }}/sbom
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.build.outputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+          CHANNEL: ${{ needs.build.outputs.channel }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          set -eu
+          out="${RUNNER_TEMP}/release/out"
+          name="deadfin-web-${VERSION}"
+          notes="${RUNNER_TEMP}/notes.md"
+          {
+            # The CHANGELOG.md section headed with this tag or version, when present.
+            if [ -f CHANGELOG.md ]; then
+              awk -v t="$TAG" -v v="$VERSION" '
+                /^## / { if (on) exit; h=$0; gsub(/[][]/, "", h); split(h, w, " ");
+                         if (w[2] == t || w[2] == v) { on=1; next } }
+                on' CHANGELOG.md
+              echo
+            fi
+            echo "## Image"
+            echo
+            echo "The built web client at \`/deadfin-web\` in a busybox image (linux/amd64, linux/arm64)."
+            echo
+            echo '```sh'
+            echo "docker pull ${IMAGE}:${TAG}"
+            echo "docker pull ${IMAGE}@${DIGEST}"
+            echo '```'
+            echo
+            echo "## Archive"
+            echo
+            echo "\`${name}.tar.gz\` holds the same bundle. Verify it with:"
+            echo
+            echo '```sh'
+            echo "sha256sum -c ${name}.tar.gz.sha256"
+            echo '```'
+            echo
+            echo "## Verify"
+            echo
+            echo "The image index and the tarball carry SLSA build provenance attestations. Each architecture digest carries an SPDX SBOM attestation; the SBOMs are attached to this release."
+            echo
+            echo '```sh'
+            echo "gh attestation verify oci://${IMAGE}@${DIGEST} --repo ${GH_REPO}"
+            echo "gh attestation verify ${name}.tar.gz --repo ${GH_REPO}"
+            echo '```'
+          } > "$notes"
+          prerelease=""
+          [ "$CHANNEL" = rc ] && prerelease="--prerelease"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file "$notes" $prerelease
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$notes" $prerelease
+          fi
+          gh release upload "$TAG" --clobber "$out/${name}.tar.gz" "$out/${name}.tar.gz.sha256" \
+            "${RUNNER_TEMP}"/sbom/*.spdx.json
