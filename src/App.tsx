@@ -5,12 +5,14 @@ import { ItemDetail } from './pages/ItemDetail';
 import { Library } from './pages/Library';
 import { Login } from './pages/Login';
 import { Player } from './pages/Player';
+import { Setup } from './pages/Setup';
 
 export function App() {
   const { session } = useAuth();
   return (
     <Routes>
       <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/setup" element={session ? <Navigate to="/" replace /> : <Setup />} />
       <Route path="/" element={session ? <Home /> : <Navigate to="/login" replace />} />
       <Route
         path="/library/:viewId"

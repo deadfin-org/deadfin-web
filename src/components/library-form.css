@@ -1,0 +1,83 @@
+.library-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field select {
+  background: var(--abyss-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: inherit;
+}
+
+.lib-button {
+  align-self: flex-start;
+  background: none;
+  color: var(--steel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.lib-button:hover:not(:disabled),
+.lib-button.is-primary {
+  border-color: var(--biolum);
+  color: var(--biolum);
+}
+
+.lib-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.folder-picker {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  padding: 10px;
+  background: var(--abyss-1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.folder-picker-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.folder-picker-path {
+  flex: 1 1 100%;
+  word-break: break-all;
+  color: var(--bone);
+}
+
+.folder-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.folder-entry {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: var(--bone);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+
+.folder-entry:hover {
+  color: var(--biolum);
+}

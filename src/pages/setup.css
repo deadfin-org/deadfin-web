@@ -1,0 +1,56 @@
+.setup-panel {
+  width: min(460px, 100%);
+}
+
+.setup-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  color: var(--steel-dim);
+}
+
+.setup-steps .is-on {
+  color: var(--biolum);
+}
+
+.setup-steps .is-done {
+  color: var(--steel);
+}
+
+.setup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.setup-head {
+  margin: 0;
+  font-weight: 900;
+  font-size: 20px;
+}
+
+.setup-note {
+  margin: 0;
+  color: var(--steel);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.setup-libraries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--biolum);
+}
+
+.setup-check {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}

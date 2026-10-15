@@ -8,7 +8,9 @@ const baseURL = process.env.PW_BASE_URL ?? 'http://localhost:5211';
 
 export default defineConfig({
   testDir: '.',
-  testMatch: 'accept.spec.ts',
+  // accept.spec.ts runs against the seeded server; setup.spec.ts against a
+  // fresh one (PW_SPEC=setup.spec.ts).
+  testMatch: process.env.PW_SPEC ?? 'accept.spec.ts',
   timeout: 60_000,
   retries: 0,
   reporter: [['list']],

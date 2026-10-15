@@ -29,6 +29,23 @@ services:
       - ../../dist:/state/web:ro
       - ./.state/media:/media:ro
 
+  # A second, untouched server for the first-run setup test (setup.spec.ts),
+  # serving the app at /web/ like the first. Internal network only: libraries
+  # added through the wizard keep internet metadata on, and the run must stay
+  # hermetic.
+  fresh:
+    image: ${DEADFIN_IMAGE:?set DEADFIN_IMAGE to the Deadfin server image under test}
+    user: '0:0'
+    command: ['--listen', '0.0.0.0:8096']
+    networks: [sealed]
+    environment:
+      DEADFIN_DATA_DIR: /state
+      JELLYFIN_DATA_DIR: /state
+    volumes:
+      - dffresh:/state
+      - ../../dist:/state/web:ro
+      - ./.state/media:/media:ro
+
   # Static front for the cross-origin pass: same config as the jellyfin target.
   web:
     image: nginx:1.29-alpine
@@ -81,5 +98,34 @@ services:
     depends_on:
       - web
 
+  # The browser in the fresh server's namespace: a direct local client, which
+  # is what Deadfin's first-run gate admits.
+  playwright-setup:
+    image: mcr.microsoft.com/playwright:v1.62.0-noble
+    profiles: ['test']
+    ipc: host
+    network_mode: 'service:fresh'
+    user: '${HOST_UID:-0}:${HOST_GID:-0}'
+    working_dir: /work
+    environment:
+      HOME: /tmp
+      CI: '1'
+      PW_SPEC: setup.spec.ts
+      PW_BASE_URL: http://localhost:8096/web/
+      HARNESS_SERVER: http://localhost:8096
+      SAME_ORIGIN: '1'
+      EVIDENCE_DIR: /work/e2e/evidence/deadfin-setup
+    volumes:
+      - ../../:/work
+    command: ['npx', 'playwright', 'test', '--config', 'e2e/playwright.config.ts']
+    depends_on:
+      - fresh
+
+networks:
+  default:
+  sealed:
+    internal: true
+
 volumes:
   dfstate:
+  dffresh:

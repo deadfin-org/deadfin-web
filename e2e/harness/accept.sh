@@ -276,8 +276,8 @@ mkdir -p "$REPO_DIR/e2e/evidence/$TARGET"
 HOST_UID=$(id -u) HOST_GID=$(id -g)
 export HOST_UID HOST_GID
 
-log 'starting the static app front'
-"${COMPOSE[@]}" up -d --quiet-pull web >/dev/null
+log 'starting the static app front and a fresh server for the setup test'
+"${COMPOSE[@]}" up -d --quiet-pull web fresh >/dev/null
 
 if [ "$TARGET" = jellyfin ]; then
   log 'running Playwright (pinned browser image, cross-origin)'
@@ -296,5 +296,9 @@ else
   log 'running Playwright: static app front, API on another origin'
   "${COMPOSE[@]}" --profile test run --rm -T playwright-cross
 fi
+
+mkdir -p "$REPO_DIR/e2e/evidence/${TARGET}-setup"
+log 'running Playwright: first-run setup on the fresh server'
+"${COMPOSE[@]}" --profile test run --rm -T playwright-setup
 
 log "PASS — evidence in e2e/evidence/$TARGET/"

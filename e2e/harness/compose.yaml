@@ -14,6 +14,17 @@ services:
       - cache:/cache
       - ./.state/media:/media:ro
 
+  # A second, untouched server for the first-run setup test (setup.spec.ts).
+  # It sits on an internal network only: libraries added through the wizard
+  # keep internet metadata on, and the run must stay hermetic.
+  fresh:
+    image: jellyfin/jellyfin@sha256:2d1a69be5aa2695d0c2df90ebeb76bbcc6efc0a798cb09bfa65906680e1d785a
+    networks: [sealed]
+    volumes:
+      - fresh-config:/config
+      - fresh-cache:/cache
+      - ./.state/media:/media:ro
+
   # Static front for the built app. This replaced `vite preview` on the host
   # when the browser moved into a container: the app has to be
   # reachable by a name that resolves on the compose network. It is a different
@@ -25,6 +36,7 @@ services:
     volumes:
       - ../../dist:/srv/app:ro
       - ./nginx-app.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [default, sealed]
 
   # The browser. Pinned to the same version as @playwright/test in package.json
   # — bump both together or Playwright rejects the image's browser bundle.
@@ -59,6 +71,34 @@ services:
       - server
       - web
 
+  playwright-setup:
+    image: mcr.microsoft.com/playwright:v1.62.0-noble
+    profiles: ['test']
+    ipc: host
+    network_mode: 'service:web'
+    user: '${HOST_UID:-0}:${HOST_GID:-0}'
+    working_dir: /work
+    environment:
+      HOME: /tmp
+      CI: '1'
+      PW_SPEC: setup.spec.ts
+      PW_BASE_URL: http://localhost
+      HARNESS_SERVER: http://fresh:8096
+      EVIDENCE_DIR: /work/e2e/evidence/jellyfin-setup
+    volumes:
+      - ../../:/work
+    command: ['npx', 'playwright', 'test', '--config', 'e2e/playwright.config.ts']
+    depends_on:
+      - fresh
+      - web
+
+networks:
+  default:
+  sealed:
+    internal: true
+
 volumes:
   config:
   cache:
+  fresh-config:
+  fresh-cache:

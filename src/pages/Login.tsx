@@ -1,7 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../api/AuthContext';
-import { defaultServerFor } from '../api/session';
+import { createApi } from '../api/client';
+import { defaultServerFor, normalizeServerUrl } from '../api/session';
+import { needsSetup } from '../api/setup';
 import { SharkMark } from '../components/SharkMark';
 import './login.css';
 
@@ -13,6 +15,36 @@ export function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A server that has not run its first-run setup cannot sign anyone in.
+  // The server that served this page sends the browser straight to setup;
+  // a typed address offers it.
+  const [unsetServer, setUnsetServer] = useState<string | null>(null);
+  const initialServer = useRef(server);
+
+  useEffect(() => {
+    let url: string;
+    try {
+      url = normalizeServerUrl(server);
+    } catch {
+      setUnsetServer(null);
+      return;
+    }
+    let live = true;
+    const t = setTimeout(() => {
+      void needsSetup(createApi(url)).then((pending) => {
+        if (!live) return;
+        if (pending && server === initialServer.current) {
+          navigate(`/setup?server=${encodeURIComponent(url)}`, { replace: true });
+        } else {
+          setUnsetServer(pending ? url : null);
+        }
+      });
+    }, 350);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [server, navigate]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -81,6 +113,13 @@ export function Login() {
         {!error && sessionEnded && (
           <p className="login-error readout" role="status" data-testid="session-ended">
             Your session ended. Sign in again.
+          </p>
+        )}
+
+        {unsetServer && (
+          <p className="login-error readout" role="status" data-testid="setup-needed">
+            This server has not been set up yet.{' '}
+            <a href={`#/setup?server=${encodeURIComponent(unsetServer)}`}>Set it up now</a>
           </p>
         )}
 
