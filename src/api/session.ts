@@ -49,3 +49,16 @@ export function normalizeServerUrl(input: string): string {
   if (!/^https?:\/\//i.test(url)) url = `http://${url}`;
   return new URL(url).origin + new URL(url).pathname.replace(/\/+$/, '');
 }
+
+/**
+ * The server address to prefill, from where the app was loaded. Served by
+ * the server itself at `<base>/web/`, the server is the origin plus `<base>`
+ * (BaseUrl, e.g. `/jellyfin`). Served at a site root (a reverse proxy in
+ * front of both), it is the origin. The Vite dev and preview ports have no
+ * server behind them, so nothing is prefilled.
+ */
+export function defaultServerFor(loc: { origin: string; port: string; pathname: string }): string {
+  if (loc.port === '5210' || loc.port === '5211') return '';
+  const web = /^(.*?)\/web(?:\/.*)?$/i.exec(loc.pathname);
+  return loc.origin + (web ? web[1] : '');
+}

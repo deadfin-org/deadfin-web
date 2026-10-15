@@ -70,11 +70,17 @@ npm run build
 
 The bundle is in `dist/`.
 
-**2. Serve it as its own site.** The bundle expects to sit at the root of
-its origin (`/`), so it runs as a separate site, not from Deadfin's
-`/web` directory (`/var/lib/deadfin/web`). Any static web server works.
-Send the app routes to `index.html` and, for one address, proxy every
-other path to the server. This nginx site does both:
+**2. Serve it.** The bundle uses relative asset paths and hash routes
+(`#/item/…`), so it runs from any directory of any static web server. Two
+ways:
+
+- **From Deadfin itself.** Deadfin serves `<DEADFIN_DATA_DIR>/web` at
+  `/web/` (`/var/lib/deadfin/web` in the container). Put the contents of
+  `dist/` there instead of jellyfin-web and open `http://<host>:8096/`.
+  deadfin-web has no admin dashboard yet, so keep a copy of jellyfin-web if
+  you need one.
+- **As its own site.** Serve `dist/` and, for one address, proxy every other
+  path to the server. This nginx site does both:
 
 ```nginx
 server {
@@ -84,9 +90,6 @@ server {
 
   # The app and its assets.
   location = /            { try_files /index.html =404; }
-  location /login         { try_files /index.html =404; }
-  location /item/         { try_files /index.html =404; }
-  location /play/         { try_files /index.html =404; }
   location /assets/       { try_files $uri =404; }
   location = /favicon.svg { try_files $uri =404; }
 
@@ -100,8 +103,9 @@ server {
 }
 ```
 
-**3. Sign in.** Open the site. The server address defaults to the page's
-own origin, which is right for the proxy above. To use a server on another
+**3. Sign in.** Open the site. The server address defaults to the server
+that served the page (the page's origin, plus the base URL when the app is
+at `<base>/web/`), which is right for both setups above. To use a server on another
 address, type its URL on the sign-in page. Deadfin and Jellyfin both allow
 cross-origin requests, so this works without the proxy.
 

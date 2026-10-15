@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../api/AuthContext';
+import { defaultServerFor } from '../api/session';
 import { SharkMark } from '../components/SharkMark';
 import './login.css';
 
@@ -97,11 +98,8 @@ export function Login() {
   );
 }
 
-/** Same-origin default when the app is served by a Deadfin server itself. */
 function defaultServer(): string {
   if (import.meta.env.VITE_DEFAULT_SERVER) return import.meta.env.VITE_DEFAULT_SERVER as string;
-  if (typeof window !== 'undefined' && window.location.port !== '5210' && window.location.port !== '5211') {
-    return window.location.origin;
-  }
-  return '';
+  if (typeof window === 'undefined') return '';
+  return defaultServerFor(window.location);
 }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   clearSession,
+  defaultServerFor,
   deviceId,
   loadSession,
   normalizeServerUrl,
@@ -60,5 +61,24 @@ describe('deviceId', () => {
   it('mints once and then sticks', () => {
     const a = deviceId();
     expect(deviceId()).toBe(a);
+  });
+});
+
+describe('defaultServerFor', () => {
+  const at = (href: string) => {
+    const u = new URL(href);
+    return { origin: u.origin, port: u.port, pathname: u.pathname };
+  };
+  it.each([
+    ['http://nas:8096/web/', 'http://nas:8096'],
+    ['http://nas:8096/web/index.html', 'http://nas:8096'],
+    ['http://nas:8096/web', 'http://nas:8096'],
+    ['https://media.example.com/jellyfin/web/', 'https://media.example.com/jellyfin'],
+    ['https://media.example.com/', 'https://media.example.com'],
+    ['https://media.example.com/webapp/', 'https://media.example.com'],
+    ['http://localhost:5210/', ''],
+    ['http://localhost:5211/', ''],
+  ])('%s → %s', (href, expected) => {
+    expect(defaultServerFor(at(href))).toBe(expected);
   });
 });
