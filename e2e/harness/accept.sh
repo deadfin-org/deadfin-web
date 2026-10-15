@@ -120,6 +120,36 @@ gen_file 'formats/Hull Breach (2023)/Hull Breach (2023).mkv' \
   -f lavfi -i "sine=frequency=330:duration=10" \
   -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 96k -shortest
 
+# Subtitles from a sidecar .srt next to a direct-playable webm.
+mkdir -p '.state/media/formats/Sonar Log (2022)'
+gen_file 'formats/Sonar Log (2022)/Sonar Log (2022).webm' \
+  -f lavfi -i "testsrc2=duration=10:size=640x360:rate=24" \
+  -f lavfi -i "sine=frequency=550:duration=10" \
+  -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -b:v 400k -pix_fmt yuv420p \
+  -c:a libopus -b:a 64k -shortest
+cat > '.state/media/formats/Sonar Log (2022)/Sonar Log (2022).en.srt' <<'SRT'
+1
+00:00:00,000 --> 00:00:05,000
+Ping. Contact bearing two-seven-zero.
+
+2
+00:00:05,000 --> 00:00:10,000
+Contact lost below the thermocline.
+SRT
+
+# Two audio tracks (English 440 Hz default, French 880 Hz) in one webm.
+mkdir -p '.state/media/formats/Twin Echo (2022)'
+gen_file 'formats/Twin Echo (2022)/Twin Echo (2022).webm' \
+  -f lavfi -i "testsrc2=duration=10:size=640x360:rate=24" \
+  -f lavfi -i "sine=frequency=440:duration=10" \
+  -f lavfi -i "sine=frequency=880:duration=10" \
+  -map 0:v -map 1:a -map 2:a \
+  -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -b:v 400k -pix_fmt yuv420p \
+  -c:a libopus -b:a 64k \
+  -metadata:s:a:0 language=eng -metadata:s:a:0 title=English \
+  -metadata:s:a:1 language=fre -metadata:s:a:1 title=French \
+  -disposition:a:0 default -disposition:a:1 0 -shortest
+
 # ---- helpers ----------------------------------------------------------------
 wait_ping() { # $1 = base url
   for i in $(seq 1 60); do
@@ -247,7 +277,7 @@ if ! curl -fsS -H "$AUTHED" "$BASE/System/Configuration" |
 fi
 
 # The three movies, the formats titles, and the archive.
-WANT=$((3 + 1 + ARCHIVE_COUNT))
+WANT=$((3 + 3 + ARCHIVE_COUNT))
 log "waiting for the scan to surface ${WANT} movies"
 for i in $(seq 1 60); do
   COUNT=$(curl -fsS -H "$AUTHED" \
@@ -298,12 +328,14 @@ if [ "$TARGET" = jellyfin ]; then
 else
   log 'running Playwright: app served by Deadfin at /web/ (same origin)'
   "${COMPOSE[@]}" --profile test run --rm -T playwright
-  # The first pass leaves Pressure Hull part-watched; put the seeded user
+  # The first pass leaves titles part-watched; put the seeded user
   # data back for the second pass.
-  PH_ID=$(movie_id 'Pressure Hull')
-  { [ -n "$PH_ID" ] && curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' \
-    -X POST "$BASE/UserItems/${PH_ID}/UserData?userId=${USER_ID}" \
-    -d '{"PlaybackPositionTicks":0,"Played":false}' >/dev/null; } || warn 'could not reset Pressure Hull between passes'
+  for title in 'Pressure Hull' 'Hull Breach' 'Sonar Log' 'Twin Echo'; do
+    ID=$(movie_id "$title")
+    { [ -n "$ID" ] && curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' \
+      -X POST "$BASE/UserItems/${ID}/UserData?userId=${USER_ID}" \
+      -d '{"PlaybackPositionTicks":0,"Played":false}' >/dev/null; } || warn "could not reset ${title} between passes"
+  done
   seed_user_data "$SEED"
   mkdir -p "$REPO_DIR/e2e/evidence/deadfin-cross"
   log 'running Playwright: static app front, API on another origin'

@@ -405,7 +405,7 @@ test('transcode: a file the browser cannot decode plays through HLS', async ({ p
   // requested codecs or stops offering them; a pass will flag this line.
   const h264 = await page.evaluate(() => MediaSource.isTypeSupported('video/mp4; codecs="avc1.640029"'));
   test.fail(process.env.HARNESS_PRODUCT === 'Deadfin' && !h264, 'Deadfin HLS encodes H.264/AAC only');
-  await page.getByTestId('shelf').filter({ hasText: 'Other formats' }).getByTestId('item-link').first().click();
+  await page.getByTestId('shelf').filter({ hasText: 'Other formats' }).getByTestId('item-link').filter({ hasText: 'Hull Breach' }).click();
   await expect(page.getByTestId('item-detail')).toBeVisible();
   const itemId = page.url().split('/item/')[1]!;
   await page.getByTestId('action-play').click();
@@ -437,4 +437,67 @@ test('transcode: a file the browser cannot decode plays through HLS', async ({ p
       { timeout: 10_000 },
     )
     .toBeGreaterThan(Math.max(0.5, at - 2));
+});
+
+async function playFromFormats(page: Page, title: string) {
+  await descend(page);
+  const shelf = page.getByTestId('shelf').filter({ hasText: 'Other formats' });
+  await shelf.getByTestId('item-link').filter({ hasText: title }).click();
+  await expect(page.getByTestId('item-detail')).toBeVisible();
+  await page.getByTestId('action-play').click();
+  const video = page.getByTestId('player-video');
+  await expect
+    .poll(async () => video.evaluate((v: HTMLVideoElement) => v.currentTime), { timeout: 45_000 })
+    .toBeGreaterThan(1);
+  return video;
+}
+
+async function openTrackMenu(page: Page) {
+  await page.mouse.move(300, 300);
+  await page.getByTestId('player-tracks').click();
+  return page.getByTestId('track-menu');
+}
+
+test('tracks: a sidecar srt shows as subtitles', async ({ page }) => {
+  const video = await playFromFormats(page, 'Sonar Log');
+  const menu = await openTrackMenu(page);
+  await menu.getByRole('radio', { name: /eng/i }).check();
+  await expect
+    .poll(
+      async () =>
+        video.evaluate((v: HTMLVideoElement) => {
+          const t = v.textTracks[0];
+          return t && t.mode === 'showing' ? (t.cues?.length ?? 0) : -1;
+        }),
+      { timeout: 10_000 },
+    )
+    .toBe(2);
+  expect(await video.evaluate((v: HTMLVideoElement) => v.textTracks[0]?.cues?.[0] && (v.textTracks[0].cues[0] as VTTCue).text)).toContain('Contact bearing');
+  await page.screenshot({ path: `${EVIDENCE}11-subtitles.png` });
+
+  await menu.getByRole('radio', { name: 'Off' }).check();
+  await expect.poll(async () => video.evaluate((v: HTMLVideoElement) => v.textTracks.length)).toBe(0);
+});
+
+test('tracks: switching audio re-negotiates and keeps the position', async ({ page }) => {
+  // Switching audio means a server-built stream: the same Deadfin H.264-only
+  // finding as the transcode test applies in a browser without H.264.
+  await page.goto('./#/login');
+  const h264 = await page.evaluate(() => MediaSource.isTypeSupported('video/mp4; codecs="avc1.640029"'));
+  test.fail(process.env.HARNESS_PRODUCT === 'Deadfin' && !h264, 'Deadfin HLS encodes H.264/AAC only');
+
+  const video = await playFromFormats(page, 'Twin Echo');
+  await expect(video).toHaveAttribute('data-play-method', 'DirectPlay');
+  await expect.poll(async () => video.evaluate((v: HTMLVideoElement) => v.currentTime), { timeout: 10_000 }).toBeGreaterThan(3);
+  const menu = await openTrackMenu(page);
+  await expect(menu.getByRole('radio', { name: /English/ })).toBeChecked();
+  const at = await video.evaluate((v: HTMLVideoElement) => v.currentTime);
+  const renegotiated = page.waitForRequest(/master\.m3u8.*AudioStreamIndex=2/i, { timeout: 15_000 });
+  await menu.getByRole('radio', { name: /French/ }).check();
+  await renegotiated;
+  await expect(video).toHaveAttribute('data-play-method', 'Transcode', { timeout: 15_000 });
+  await expect
+    .poll(async () => video.evaluate((v: HTMLVideoElement) => (v.paused ? -1 : v.currentTime)), { timeout: 45_000 })
+    .toBeGreaterThan(at - 2);
+  await expect(menu.getByRole('radio', { name: /French/ })).toBeChecked();
 });

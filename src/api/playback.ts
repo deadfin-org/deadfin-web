@@ -1,6 +1,7 @@
 import type { components } from './schema';
 import type { Api } from './client';
 import { deviceId } from './session';
+import { SUBTITLE_PROFILES, type StreamRequest } from './tracks';
 
 type DeviceProfile = components['schemas']['DeviceProfile'];
 export type MediaSource = components['schemas']['MediaSourceInfo'];
@@ -92,19 +93,35 @@ export function buildDeviceProfile(caps: Capabilities): DeviceProfile {
     MaxStreamingBitrate: 120_000_000,
     DirectPlayProfiles: direct,
     TranscodingProfiles: transcoding,
-    SubtitleProfiles: [],
+    SubtitleProfiles: SUBTITLE_PROFILES,
   };
+}
+
+export interface PlaybackRequest extends StreamRequest {
+  startTimeTicks?: number;
+  mediaSourceId?: string | null;
 }
 
 export async function getPlaybackInfo(
   api: Api,
   itemId: string,
   userId: string,
-  startTimeTicks = 0,
+  req: PlaybackRequest = {},
 ): Promise<PlaybackInfo> {
+  // A non-default audio track or a burned-in subtitle needs a stream the
+  // server builds; the browser cannot apply either to the original file.
+  const rebuild = req.audioStreamIndex !== undefined || req.burnSubtitleIndex !== undefined;
   const { data, error } = await api.POST('/Items/{itemId}/PlaybackInfo', {
-    params: { path: { itemId }, query: { userId, startTimeTicks } },
-    body: { DeviceProfile: buildDeviceProfile(probeCapabilities()), AutoOpenLiveStream: false },
+    params: { path: { itemId }, query: { userId, startTimeTicks: req.startTimeTicks ?? 0 } },
+    body: {
+      DeviceProfile: buildDeviceProfile(probeCapabilities()),
+      AutoOpenLiveStream: false,
+      MediaSourceId: req.mediaSourceId ?? undefined,
+      AudioStreamIndex: req.audioStreamIndex,
+      SubtitleStreamIndex: req.burnSubtitleIndex,
+      EnableDirectPlay: rebuild ? false : undefined,
+      AlwaysBurnInSubtitleWhenTranscoding: req.burnSubtitleIndex !== undefined ? true : undefined,
+    },
   });
   if (error !== undefined || !data) throw new Error('PlaybackInfo failed');
   return data;
@@ -163,6 +180,8 @@ interface ReportCtx {
   mediaSourceId?: string | null;
   playSessionId?: string | null;
   playMethod?: PlayMethod;
+  audioStreamIndex?: number;
+  subtitleStreamIndex?: number | null;
 }
 
 const common = (ctx: ReportCtx, positionTicks: number) => ({
@@ -171,6 +190,8 @@ const common = (ctx: ReportCtx, positionTicks: number) => ({
   PlaySessionId: ctx.playSessionId ?? undefined,
   PositionTicks: Math.max(0, Math.round(positionTicks)),
   PlayMethod: ctx.playMethod ?? 'DirectPlay',
+  AudioStreamIndex: ctx.audioStreamIndex,
+  SubtitleStreamIndex: ctx.subtitleStreamIndex ?? -1,
   CanSeek: true,
 });
 

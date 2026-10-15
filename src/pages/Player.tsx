@@ -15,6 +15,16 @@ import {
 } from '../api/playback';
 import { episodeLabel, fetchNextEpisode } from '../api/tv';
 import type { BaseItem } from '../api/library';
+import {
+  audioTracks,
+  defaultAudioIndex,
+  defaultSubtitleIndex,
+  sameRequest,
+  streamRequestFor,
+  subtitleTracks,
+  subtitleUrl,
+  type StreamRequest,
+} from '../api/tracks';
 import { formatTimecode, secondsToTicks, ticksToSeconds } from '../lib/format';
 import { playUrl } from './Series';
 import './player.css';
@@ -50,11 +60,27 @@ function PlayerInner({ itemId }: { itemId: string }) {
   const [ended, setEnded] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Negotiate once per item: PlaybackInfo → direct-play source → static URL.
+  // Track choice. `request` is what the current stream was built with; a
+  // choice the browser cannot apply itself changes it and re-negotiates from
+  // the current position.
+  const [audio, setAudio] = useState<number | undefined>(undefined);
+  const [subtitle, setSubtitle] = useState<number | null | undefined>(undefined);
+  const [request, setRequest] = useState<StreamRequest>({});
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [vtt, setVtt] = useState<{ url: string; label: string } | null>(null);
+  const startRef = useRef(startTicks);
+  const selRef = useRef({ audio, subtitle });
+  selRef.current = { audio, subtitle };
+
+  // Negotiate per item and per stream request: PlaybackInfo → source → URL.
   useEffect(() => {
     if (!session || !api) return;
     let cancelled = false;
-    getPlaybackInfo(api, itemId, session.userId, startTicks)
+    getPlaybackInfo(api, itemId, session.userId, {
+      ...request,
+      startTimeTicks: startRef.current,
+      mediaSourceId: source?.media.Id,
+    })
       .then((info) => {
         if (cancelled) return;
         const picked = pickSource(info);
@@ -63,6 +89,12 @@ function PlayerInner({ itemId }: { itemId: string }) {
           return;
         }
         const { media, method } = picked;
+        if (selRef.current.audio === undefined) setAudio(defaultAudioIndex(media));
+        if (selRef.current.subtitle === undefined) {
+          const d = defaultSubtitleIndex(media);
+          // A default image subtitle would need a second negotiation; start with it off.
+          setSubtitle(d !== null && subtitleTracks(media).find((t) => t.index === d)?.text ? d : null);
+        }
         setSource({
           url:
             method === 'DirectPlay'
@@ -78,7 +110,41 @@ function PlayerInner({ itemId }: { itemId: string }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemId]);
+  }, [itemId, request]);
+
+  // Text subtitles: the server's WebVTT, fetched and handed to a <track> as a
+  // blob so the video element needs no CORS mode.
+  useEffect(() => {
+    setVtt(null);
+    if (!source || !session || subtitle === null || subtitle === undefined) return;
+    const track = subtitleTracks(source.media).find((t) => t.index === subtitle);
+    if (!track?.text) return;
+    let url: string | undefined;
+    let cancelled = false;
+    fetch(subtitleUrl(session.serverUrl, itemId, source.media, subtitle, session.accessToken))
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((text) => {
+        if (cancelled) return;
+        url = URL.createObjectURL(new Blob([text], { type: 'text/vtt' }));
+        setVtt({ url, label: track.label });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, subtitle]);
+
+  const choose = (nextAudio: number | undefined, nextSubtitle: number | null) => {
+    setAudio(nextAudio);
+    setSubtitle(nextSubtitle);
+    if (!source) return;
+    const next = streamRequestFor(source.media, nextAudio, nextSubtitle);
+    if (sameRequest(next, request)) return;
+    startRef.current = secondsToTicks(videoRef.current?.currentTime ?? 0);
+    setRequest(next);
+  };
 
   // A transcode is an HLS playlist: Safari plays it natively, other browsers
   // through hls.js (loaded only when needed).
@@ -97,7 +163,7 @@ function PlayerInner({ itemId }: { itemId: string }) {
         setFault("this browser can't play streamed video");
         return;
       }
-      const h = new Hls({ startPosition: startTicks > 0 ? ticksToSeconds(startTicks) : -1 });
+      const h = new Hls({ startPosition: startRef.current > 0 ? ticksToSeconds(startRef.current) : -1 });
       h.on(Hls.Events.ERROR, (_e, data) => {
         if (!data.fatal) return;
         const status = data.response?.code ?? 0;
@@ -129,6 +195,12 @@ function PlayerInner({ itemId }: { itemId: string }) {
       mediaSourceId: source.media.Id,
       playSessionId: source.playSessionId,
       playMethod: source.method,
+      get audioStreamIndex() {
+        return selRef.current.audio;
+      },
+      get subtitleStreamIndex() {
+        return selRef.current.subtitle;
+      },
     };
     const pos = () => secondsToTicks(video.currentTime);
     let started = false;
@@ -162,7 +234,7 @@ function PlayerInner({ itemId }: { itemId: string }) {
     const onMeta = () => {
       setDuration(video.duration);
       // hls.js starts at startPosition itself.
-      if (startTicks > 0 && source.method === 'DirectPlay') video.currentTime = ticksToSeconds(startTicks);
+      if (startRef.current > 0 && source.method === 'DirectPlay') video.currentTime = ticksToSeconds(startRef.current);
     };
     const onError = () => setFault('the stream faulted');
 
@@ -264,13 +336,67 @@ function PlayerInner({ itemId }: { itemId: string }) {
           playsInline
           data-testid="player-video"
           data-play-method={source.method}
-        />
+        >
+          {vtt && (
+            <track
+              key={vtt.url}
+              kind="subtitles"
+              src={vtt.url}
+              label={vtt.label}
+              default
+              onLoad={(e) => {
+                e.currentTarget.track.mode = 'showing';
+              }}
+            />
+          )}
+        </video>
       )}
 
       <div className="player-shade" aria-hidden="true" />
 
       {ended && nextEpisode.data && (
         <UpNext next={nextEpisode.data} onPlay={(to) => navigate(to, { replace: true })} />
+      )}
+
+      {menuOpen && source && (
+        <div className="player-menu" data-testid="track-menu" onClick={(e) => e.stopPropagation()}>
+          {audioTracks(source.media).length > 1 && (
+            <fieldset>
+              <legend className="readout">Audio</legend>
+              {audioTracks(source.media).map((t) => (
+                <label key={t.index}>
+                  <input
+                    type="radio"
+                    name="audio"
+                    checked={audio === t.index}
+                    onChange={() => choose(t.index, subtitle ?? null)}
+                  />
+                  {t.label}
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {subtitleTracks(source.media).length > 0 && (
+            <fieldset>
+              <legend className="readout">Subtitles</legend>
+              <label>
+                <input type="radio" name="subtitle" checked={subtitle === null} onChange={() => choose(audio, null)} />
+                Off
+              </label>
+              {subtitleTracks(source.media).map((t) => (
+                <label key={t.index}>
+                  <input
+                    type="radio"
+                    name="subtitle"
+                    checked={subtitle === t.index}
+                    onChange={() => choose(audio, t.index)}
+                  />
+                  {t.label}
+                </label>
+              ))}
+            </fieldset>
+          )}
+        </div>
       )}
 
       <div className="player-controls" data-testid="player-controls">
@@ -306,6 +432,18 @@ function PlayerInner({ itemId }: { itemId: string }) {
           <span className="player-timecode readout" data-testid="player-timecode">
             {formatTimecode(time)} / {formatTimecode(duration)}
           </span>
+
+          {source && (audioTracks(source.media).length > 1 || subtitleTracks(source.media).length > 0) && (
+            <button
+              className="player-fullscreen readout"
+              data-testid="player-tracks"
+              aria-label="Audio and subtitles"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((o) => !o)}
+            >
+              CC
+            </button>
+          )}
 
           <button
             className="player-fullscreen readout"
