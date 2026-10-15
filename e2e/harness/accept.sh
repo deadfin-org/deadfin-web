@@ -229,7 +229,7 @@ curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' \
 
 # Loosen resume thresholds for 10s media.
 if ! curl -fsS -H "$AUTHED" "$BASE/System/Configuration" |
-  python3 -c 'import json,sys; c=json.load(sys.stdin); c["MinResumeDurationSeconds"]=1; c["MinResumePct"]=1; c["MaxResumePct"]=99; print(json.dumps(c))' |
+  python3 -c 'import json,sys; c=json.load(sys.stdin); c["MinResumeDurationSeconds"]=1; c["MinResumePct"]=1; c["MaxResumePct"]=99; c["QuickConnectAvailable"]=True; print(json.dumps(c))' |
   curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' -X POST "$BASE/System/Configuration" -d @- >/dev/null; then
   [ "$SEED" = soft ] && warn 'resume thresholds not settable through /System/Configuration — parity finding' || fail 'configuring resume thresholds failed'
 fi

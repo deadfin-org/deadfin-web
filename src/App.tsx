@@ -6,6 +6,7 @@ import { Library } from './pages/Library';
 import { Login } from './pages/Login';
 import { Player } from './pages/Player';
 import { Setup } from './pages/Setup';
+import { QuickConnect } from './pages/QuickConnect';
 
 export function App() {
   const { session } = useAuth();
@@ -25,6 +26,10 @@ export function App() {
       <Route
         path="/play/:itemId"
         element={session ? <Player /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/quickconnect"
+        element={session ? <QuickConnect /> : <Navigate to="/login" replace />}
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

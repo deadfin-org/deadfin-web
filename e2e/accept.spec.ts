@@ -340,3 +340,30 @@ test('tv: marking an episode played sticks', async ({ page }) => {
   await page.reload();
   await expect(page.getByTestId('toggle-played')).toHaveClass(/is-on/, { timeout: 10_000 });
 });
+
+test('quick connect: a waiting device is signed in by its code', async ({ page }) => {
+  // The "TV": an unauthenticated device asks the server for a code.
+  const tv = { Authorization: 'MediaBrowser Client="Deadfin Accept TV", Device="tv", DeviceId="pw-tv", Version="0.1.0"' };
+  const initiate = await page.request.post(`${SERVER}/QuickConnect/Initiate`, { headers: tv });
+  expect(initiate.ok()).toBe(true);
+  const { Code: code, Secret: secret } = (await initiate.json()) as { Code: string; Secret: string };
+
+  await descend(page);
+  await page.getByTestId('quick-connect-link').click();
+  await expect(page.getByRole('heading', { name: 'Sign in a device' })).toBeVisible();
+
+  // A wrong code says what went wrong and authorizes nothing.
+  const wrong = code === '000000' ? '000001' : '000000';
+  await page.getByLabel('Code').fill(wrong);
+  await page.getByRole('button', { name: 'Sign in device' }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+
+  await page.getByLabel('Code').fill(`${code.slice(0, 3)} ${code.slice(3)}`);
+  await page.getByRole('button', { name: 'Sign in device' }).click();
+  await expect(page.getByTestId('quick-connect-done')).toBeVisible();
+  await page.screenshot({ path: `${EVIDENCE}08-quick-connect.png` });
+
+  // The TV's poll now reports it authenticated.
+  const state = await page.request.get(`${SERVER}/QuickConnect/Connect?secret=${secret}`, { headers: tv });
+  expect(((await state.json()) as { Authenticated?: boolean }).Authenticated).toBe(true);
+});

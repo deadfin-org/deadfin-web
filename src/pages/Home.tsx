@@ -25,6 +25,9 @@ export function Home() {
         <WebBuildReadout />
         <div className="home-operator">
           <span className="readout">{session.userName}</span>
+          <Link className="home-signout readout" to="/quickconnect" data-testid="quick-connect-link">
+            sign in a device
+          </Link>
           <button className="home-signout readout" onClick={signOut}>
             surface ↑
           </button>
