@@ -6,7 +6,8 @@ interface PosterProps {
   title: string;
   imageUrl: string;
   blurhash?: string;
-  year?: number | null;
+  /** Small mono caption after the title: a year, or an episode label. */
+  year?: number | string | null;
   /** Watch progress 0–100; renders the bioluminescent strip when > 0. */
   progress?: number;
   /** Renders the surfaced (watched) badge. */
@@ -57,7 +58,7 @@ export function Poster({ title, imageUrl, blurhash, year, progress = 0, played =
       {caption && (
         <figcaption className="poster-caption">
           <span className="poster-title">{title}</span>
-          {typeof year === 'number' && <span className="poster-year readout">{year}</span>}
+          {year != null && year !== '' && <span className="poster-year readout">{year}</span>}
         </figcaption>
       )}
     </figure>

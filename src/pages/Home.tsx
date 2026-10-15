@@ -1,11 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../api/AuthContext';
-import { primaryBlurhash, primaryImageUrl, type Api } from '../api/client';
+import type { Api } from '../api/client';
+import { countLabel, fetchUserViews, libraryItemsQuery } from '../api/library';
+import { fetchNextUp } from '../api/tv';
 import { describeWebBuild, webBuild } from '../build';
-import { Poster } from '../components/Poster';
+import { ItemCard } from '../components/ItemCard';
 import { SharkMark } from '../components/SharkMark';
 import './home.css';
+import './library.css';
 
 export function Home() {
   const { session, api, signOut } = useAuth();
@@ -30,6 +33,7 @@ export function Home() {
 
       <main className="home-main">
         <ResumeShelf api={api} serverUrl={session.serverUrl} userId={session.userId} />
+        <NextUpShelf api={api} serverUrl={session.serverUrl} userId={session.userId} />
         <Libraries api={api} serverUrl={session.serverUrl} userId={session.userId} />
       </main>
     </div>
@@ -61,33 +65,6 @@ export function WebBuildReadout() {
     <span className="home-build readout" data-testid="web-build" title={webBuild.commit}>
       {describeWebBuild(webBuild)}
     </span>
-  );
-}
-
-/** Item card shared by every shelf: poster + link + user-data overlays. */
-function ItemCard(props: {
-  serverUrl: string;
-  item: {
-    Id?: string;
-    Name?: string | null;
-    ProductionYear?: number | null;
-    ImageTags?: { [key: string]: string | null } | null;
-    ImageBlurHashes?: { Primary?: { [key: string]: string | null } | null } | null;
-    UserData?: { PlayedPercentage?: number | null; Played?: boolean | null } | null;
-  };
-}) {
-  const { serverUrl, item } = props;
-  return (
-    <Link to={`/item/${item.Id}`} className="card-link" data-testid="item-link">
-      <Poster
-        title={item.Name ?? 'Untitled'}
-        imageUrl={primaryImageUrl(serverUrl, item)}
-        blurhash={primaryBlurhash(item)}
-        year={item.ProductionYear}
-        progress={item.UserData?.PlayedPercentage ?? 0}
-        played={item.UserData?.Played ?? false}
-      />
-    </Link>
   );
 }
 
@@ -128,16 +105,31 @@ function ResumeShelf({ api, serverUrl, userId }: { api: Api; serverUrl: string; 
   );
 }
 
+/** The next episode of each series in progress. */
+function NextUpShelf({ api, serverUrl, userId }: { api: Api; serverUrl: string; userId: string }) {
+  const items = useQuery({
+    queryKey: ['next-up', userId],
+    queryFn: () => fetchNextUp(api, userId, { limit: 16 }),
+  });
+  if (!items.data || items.data.length === 0) return null;
+  return (
+    <section className="shelf" data-testid="next-up-shelf">
+      <h2 className="shelf-head">
+        <span className="shelf-name">Next up</span>
+      </h2>
+      <div className="shelf-grid">
+        {items.data.map((item) => (
+          <ItemCard key={item.Id} serverUrl={serverUrl} item={item} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Libraries({ api, serverUrl, userId }: { api: Api; serverUrl: string; userId: string }) {
   const views = useQuery({
     queryKey: ['user-views', userId],
-    queryFn: async () => {
-      const { data, error } = await api.GET('/UserViews', {
-        params: { query: { userId } },
-      });
-      if (error !== undefined) throw new Error('UserViews failed');
-      return data?.Items ?? [];
-    },
+    queryFn: () => fetchUserViews(api, userId),
   });
 
   if (views.isPending) return <p className="home-status readout">sounding…</p>;
@@ -172,12 +164,8 @@ function Libraries({ api, serverUrl, userId }: { api: Api; serverUrl: string; us
   );
 }
 
-/** What a shelf shows for each library kind; unknown kinds list direct children. */
-const SHELF_ITEM_TYPES: Record<string, ('Movie' | 'Series' | 'MusicAlbum')[]> = {
-  movies: ['Movie'],
-  tvshows: ['Series'],
-  music: ['MusicAlbum'],
-};
+/** Home shelves show what was added last; the library page has everything. */
+const SHELF_SIZE = 24;
 
 function Shelf(props: {
   api: Api;
@@ -189,28 +177,25 @@ function Shelf(props: {
   index: number;
 }) {
   const { api, serverUrl, userId, viewId, name, collectionType, index } = props;
-  const itemTypes = collectionType ? SHELF_ITEM_TYPES[collectionType] : undefined;
   const items = useQuery({
     queryKey: ['shelf', userId, viewId],
     queryFn: async () => {
       const { data, error } = await api.GET('/Items', {
         params: {
-          query: {
+          query: libraryItemsQuery({
             userId,
-            parentId: viewId,
-            recursive: itemTypes !== undefined,
-            includeItemTypes: itemTypes,
-            sortBy: ['SortName'],
-            sortOrder: ['Ascending'],
-            limit: 30,
-            enableUserData: true,
-            imageTypeLimit: 1,
-            enableImageTypes: ['Primary'],
-          },
+            viewId,
+            collectionType,
+            sortBy: 'DateCreated',
+            descending: true,
+            played: 'all',
+            startIndex: 0,
+            limit: SHELF_SIZE,
+          }),
         },
       });
       if (error !== undefined) throw new Error(`Items failed for view ${viewId}`);
-      return data?.Items ?? [];
+      return { items: data?.Items ?? [], total: data?.TotalRecordCount ?? 0 };
     },
     enabled: viewId !== '',
   });
@@ -218,10 +203,12 @@ function Shelf(props: {
   return (
     <section className="shelf" style={{ animationDelay: `${0.08 * index}s` }} data-testid="shelf">
       <h2 className="shelf-head">
-        <span className="shelf-name">{name}</span>
-        <span className="readout">
-          {items.data ? `${items.data.length} in range` : '· · ·'}
-        </span>
+        <Link to={`/library/${viewId}`} className="shelf-name shelf-name-link" data-testid="shelf-link">
+          {name}
+        </Link>
+        <Link to={`/library/${viewId}`} className="readout shelf-name-link" data-testid="shelf-count">
+          {items.data ? `${countLabel(items.data.total)} · see all →` : '· · ·'}
+        </Link>
       </h2>
       {items.isError ? (
         <p className="home-status readout" role="alert">
@@ -229,7 +216,7 @@ function Shelf(props: {
         </p>
       ) : (
         <div className="shelf-grid">
-          {(items.data ?? []).map((item) => (
+          {(items.data?.items ?? []).map((item) => (
             <ItemCard key={item.Id} serverUrl={serverUrl} item={item} />
           ))}
         </div>

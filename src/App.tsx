@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './api/AuthContext';
 import { Home } from './pages/Home';
 import { ItemDetail } from './pages/ItemDetail';
+import { Library } from './pages/Library';
 import { Login } from './pages/Login';
 import { Player } from './pages/Player';
 
@@ -11,6 +12,10 @@ export function App() {
     <Routes>
       <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/" element={session ? <Home /> : <Navigate to="/login" replace />} />
+      <Route
+        path="/library/:viewId"
+        element={session ? <Library /> : <Navigate to="/login" replace />}
+      />
       <Route
         path="/item/:itemId"
         element={session ? <ItemDetail /> : <Navigate to="/login" replace />}

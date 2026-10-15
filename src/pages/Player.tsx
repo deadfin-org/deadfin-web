@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../api/AuthContext';
 import {
@@ -10,7 +11,10 @@ import {
   reportStopped,
   type MediaSource,
 } from '../api/playback';
+import { episodeLabel, fetchNextEpisode } from '../api/tv';
+import type { BaseItem } from '../api/library';
 import { formatTimecode, secondsToTicks, ticksToSeconds } from '../lib/format';
+import { playUrl } from './Series';
 import './player.css';
 
 const PROGRESS_INTERVAL_MS = 5_000;
@@ -36,6 +40,7 @@ function PlayerInner({ itemId }: { itemId: string }) {
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [ended, setEnded] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Negotiate once per item: PlaybackInfo → direct-play source → static URL.
@@ -98,7 +103,10 @@ function PlayerInner({ itemId }: { itemId: string }) {
       reportProgress(ctx, pos(), true);
     };
     const onSeeked = () => reportProgress(ctx, pos(), video.paused);
-    const onEnded = stop;
+    const onEnded = () => {
+      stop();
+      setEnded(true);
+    };
     const onTime = () => setTime(video.currentTime);
     const onMeta = () => {
       setDuration(video.duration);
@@ -147,6 +155,24 @@ function PlayerInner({ itemId }: { itemId: string }) {
     };
   }, [poke]);
 
+  // An episode offers the next one when it ends.
+  const userId = session?.userId ?? '';
+  const item = useQuery({
+    queryKey: ['item', userId, itemId],
+    queryFn: async () => {
+      const { data, error } = await api!.GET('/Items/{itemId}', { params: { path: { itemId }, query: { userId } } });
+      if (error !== undefined || !data) throw new Error(`Items/${itemId} failed`);
+      return data;
+    },
+    enabled: !!api,
+  });
+  const seriesId = item.data?.Type === 'Episode' ? item.data.SeriesId : undefined;
+  const nextEpisode = useQuery({
+    queryKey: ['next-episode', userId, itemId],
+    queryFn: () => fetchNextEpisode(api!, userId, seriesId!, itemId),
+    enabled: !!api && !!seriesId,
+  });
+
   const togglePlay = () => {
     const v = videoRef.current;
     if (!v) return;
@@ -190,6 +216,10 @@ function PlayerInner({ itemId }: { itemId: string }) {
       )}
 
       <div className="player-shade" aria-hidden="true" />
+
+      {ended && nextEpisode.data && (
+        <UpNext next={nextEpisode.data} onPlay={(to) => navigate(to, { replace: true })} />
+      )}
 
       <div className="player-controls" data-testid="player-controls">
         <button
@@ -239,5 +269,41 @@ function PlayerInner({ itemId }: { itemId: string }) {
         </div>
       </div>
     </main>
+  );
+}
+
+const UP_NEXT_SECONDS = 10;
+
+/** End-of-episode card: plays the next episode after a countdown unless cancelled. */
+function UpNext({ next, onPlay }: { next: BaseItem; onPlay: (to: string) => void }) {
+  const [left, setLeft] = useState(UP_NEXT_SECONDS);
+  const [cancelled, setCancelled] = useState(false);
+  useEffect(() => {
+    if (cancelled) return;
+    if (left <= 0) {
+      onPlay(playUrl(next));
+      return;
+    }
+    const t = setTimeout(() => setLeft((n) => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [left, cancelled, next, onPlay]);
+
+  return (
+    <aside className="up-next" data-testid="up-next" aria-live="polite">
+      <span className="readout">Up next{cancelled ? '' : ` in ${left} s`}</span>
+      <strong className="up-next-title">
+        {episodeLabel(next)} {next.Name}
+      </strong>
+      <div className="up-next-actions">
+        <button className="action-primary" data-testid="up-next-play" onClick={() => onPlay(playUrl(next))}>
+          ▶ Play now
+        </button>
+        {!cancelled && (
+          <button className="action-toggle" data-testid="up-next-cancel" onClick={() => setCancelled(true)}>
+            Cancel
+          </button>
+        )}
+      </div>
+    </aside>
   );
 }

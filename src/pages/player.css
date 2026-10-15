@@ -134,3 +134,28 @@
   border-color: var(--biolum);
   color: var(--biolum);
 }
+
+.up-next {
+  position: absolute;
+  right: clamp(16px, 4vw, 40px);
+  bottom: 96px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 360px;
+  padding: 16px 18px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: rgba(6, 11, 18, 0.9);
+  box-shadow: var(--shadow-raise);
+}
+
+.up-next-title {
+  font-weight: 600;
+}
+
+.up-next-actions {
+  display: flex;
+  gap: 10px;
+}

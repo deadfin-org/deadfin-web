@@ -1,5 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 
+/** A home shelf by library name. */
+const shelf = (page: Page, name: string) =>
+  page.getByTestId('shelf').filter({ has: page.getByTestId('shelf-link').filter({ hasText: new RegExp(`^${name}$`) }) });
+
 const SERVER = process.env.HARNESS_SERVER ?? 'http://localhost:8097';
 const EVIDENCE = (process.env.EVIDENCE_DIR ?? new URL('./evidence', import.meta.url).pathname) + '/';
 
@@ -28,7 +32,7 @@ test('descend: connect → login → home grid renders the library', async ({ pa
   await expect(page.getByTestId('connection')).toBeVisible();
 
   // The Movies shelf surfaces with all three seeded movies…
-  const moviesShelf = page.getByTestId('shelf').first();
+  const moviesShelf = shelf(page, 'Movies');
   await expect(moviesShelf).toBeVisible({ timeout: 20_000 });
   await expect(moviesShelf.getByTestId('poster')).toHaveCount(3, { timeout: 20_000 });
 
@@ -64,7 +68,7 @@ test('continue watching, item detail, user-data toggles', async ({ page }) => {
   await expect(resume.getByTestId('poster-progress')).toBeVisible();
 
   // The played movie wears its surfaced badge in the library shelf.
-  await expect(page.getByTestId('shelf').first().getByTestId('poster-played')).toHaveCount(1, {
+  await expect(shelf(page, 'Movies').getByTestId('poster-played')).toHaveCount(1, {
     timeout: 20_000,
   });
   await page.screenshot({ path: `${EVIDENCE}04-home-userdata.png`, fullPage: true });
@@ -211,4 +215,128 @@ test('a revoked token returns to sign-in with a message', async ({ page }) => {
   await expect(page).toHaveURL(/\/login$/, { timeout: 15_000 });
   await expect(page.getByTestId('session-ended')).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('deadfin.session.v1'))).toBeNull();
+});
+
+test('library page: count, paging past the shelf, sort and filter', async ({ page }) => {
+  await descend(page);
+
+  // The home shelf shows the newest 24 and the real total.
+  const archive = shelf(page, 'Archive');
+  await expect(archive.getByTestId('shelf-count')).toHaveText(/^40 items/, { timeout: 20_000 });
+  await expect(archive.getByTestId('poster')).toHaveCount(24);
+
+  await archive.getByTestId('shelf-link').click();
+  await expect(page).toHaveURL(/#\/library\//);
+  await expect(page.getByRole('heading', { name: 'Archive' })).toBeVisible();
+  await expect(page.getByTestId('library-count')).toHaveText('40 items');
+
+  // 40 titles, 36 per page: the second page arrives on scroll or on demand.
+  const grid = page.getByTestId('library-grid');
+  await expect(grid.getByTestId('poster')).not.toHaveCount(0);
+  const more = page.getByTestId('library-more');
+  if (await more.isVisible()) await more.click();
+  await expect(grid.getByTestId('poster')).toHaveCount(40, { timeout: 15_000 });
+  await expect(grid.getByTestId('item-link').first()).toContainText('Archive Reel 01');
+  await page.screenshot({ path: `${EVIDENCE}07-library.png`, fullPage: true });
+
+  // Name, descending.
+  await page.getByRole('button', { name: /switch to descending/ }).click();
+  await expect(grid.getByTestId('item-link').first()).toContainText('Archive Reel 40');
+  await expect(page).toHaveURL(/order=desc/);
+
+  // Nothing in this library is played.
+  await page.getByLabel('Show').selectOption('played');
+  await expect(page.getByTestId('library-empty')).toBeVisible();
+});
+
+/** Auth headers and user id of the signed-in browser session, for API checks. */
+async function sessionApi(page: Page) {
+  const session = JSON.parse(
+    (await page.evaluate(() => localStorage.getItem('deadfin.session.v1')))!,
+  ) as { accessToken: string; userId: string };
+  const headers = {
+    Authorization: `MediaBrowser Client="Deadfin Accept", Device="pw", DeviceId="pw", Version="0.1.0", Token="${session.accessToken}"`,
+  };
+  return { headers, userId: session.userId };
+}
+
+/** The three fixture episodes, all unplayed (the deadfin target runs the suite twice). */
+async function resetEpisodes(page: Page) {
+  const { headers, userId } = await sessionApi(page);
+  const eps = (await (
+    await page.request.get(`${SERVER}/Items?userId=${userId}&recursive=true&includeItemTypes=Episode&sortBy=SortName`, { headers })
+  ).json()) as { Items: { Id: string; Name: string }[] };
+  expect(eps.Items.length).toBe(3);
+  for (const e of eps.Items) {
+    await page.request.delete(`${SERVER}/UserPlayedItems/${e.Id}?userId=${userId}`, { headers });
+  }
+  return { headers, userId, episodes: eps.Items };
+}
+
+test('tv: series, seasons, episodes, next up and up next', async ({ page }) => {
+  await descend(page);
+  const { headers, userId, episodes } = await resetEpisodes(page);
+  await page.reload();
+
+  // Series card → series page: no Play button for the series itself, seasons as tabs.
+  await shelf(page, 'Shows').getByTestId('item-link').first().click();
+  await expect(page.getByTestId('series')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('heading', { name: 'Trench Tales' })).toBeVisible();
+  await expect(page.getByTestId('action-play')).toHaveCount(0);
+  await expect(page.getByRole('tab')).toHaveCount(2);
+  await expect(page.getByRole('tab', { selected: true })).toHaveText(/Season 1/);
+  const rows = page.getByTestId('episode-row');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText('S1:E1');
+  await expect(page.getByTestId('series-play-next')).toBeVisible();
+  await page.screenshot({ path: `${EVIDENCE}08-series.png`, fullPage: true });
+
+  await page.getByRole('tab', { name: /Specials/ }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText('Special');
+  await page.getByRole('tab', { name: /Season 1/ }).click();
+  await expect(rows).toHaveCount(2);
+
+  // Episode page: breadcrumbs back to the series, and a Play button.
+  await rows.first().getByRole('link', { name: /First Dive/ }).click();
+  await expect(page.getByTestId('detail-crumbs')).toContainText('Trench Tales');
+  await expect(page.getByTestId('action-play')).toBeVisible();
+
+  // Episode 1 watched (through the API): Next Up on home is episode 2.
+  const first = episodes.find((e) => /First Dive/.test(e.Name))!;
+  await page.request.post(`${SERVER}/UserPlayedItems/${first.Id}?userId=${userId}`, { headers });
+  await page.goto('./');
+  const nextUp = page.getByTestId('next-up-shelf');
+  await expect(nextUp).toBeVisible({ timeout: 15_000 });
+  await expect(nextUp.getByTestId('poster').first()).toContainText('S1:E2');
+
+  // From the series, play episode 1 to its end: the next episode is offered.
+  await shelf(page, 'Shows').getByTestId('item-link').first().click();
+  await expect(page.getByTestId('series-play-next')).toContainText('S1:E2');
+  await page.getByRole('button', { name: /^Play S1:E1/ }).click();
+  const video = page.getByTestId('player-video');
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.duration || 0), { timeout: 15_000 }).toBeGreaterThan(5);
+  await video.evaluate((v: HTMLVideoElement) => {
+    v.currentTime = v.duration - 0.5;
+    void v.play();
+  });
+  const upNext = page.getByTestId('up-next');
+  await expect(upNext).toBeVisible({ timeout: 15_000 });
+  await expect(upNext).toContainText('S1:E2');
+  await page.screenshot({ path: `${EVIDENCE}09-up-next.png` });
+  await page.getByTestId('up-next-play').click();
+  await expect(page).toHaveURL(/\/play\//);
+  await expect.poll(() => page.getByTestId('player-video').evaluate((v: HTMLVideoElement) => v.currentTime), { timeout: 15_000 }).toBeGreaterThan(0.5);
+});
+
+test('tv: marking an episode played sticks', async ({ page }) => {
+  await descend(page);
+  await resetEpisodes(page);
+  await page.reload();
+  await shelf(page, 'Shows').getByTestId('item-link').first().click();
+  await page.getByTestId('episode-row').first().getByRole('link', { name: /First Dive/ }).click();
+  await page.getByTestId('toggle-played').click();
+  await expect(page.getByTestId('toggle-played')).toHaveClass(/is-on/);
+  await page.reload();
+  await expect(page.getByTestId('toggle-played')).toHaveClass(/is-on/, { timeout: 10_000 });
 });

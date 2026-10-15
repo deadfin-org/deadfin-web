@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../api/AuthContext';
 import { backdropImageUrl, primaryBlurhash, primaryImageUrl, type Api } from '../api/client';
+import { episodeLabel } from '../api/tv';
 import { Poster } from '../components/Poster';
+import { SeriesEpisodes } from './Series';
 import { formatRemaining, formatRuntime, progressPercent } from '../lib/format';
 import './item-detail.css';
 
@@ -43,6 +45,10 @@ function Detail(props: { api: Api; serverUrl: string; userId: string; itemId: st
       void queryClient.invalidateQueries({ queryKey: ['item', userId, itemId] });
       void queryClient.invalidateQueries({ queryKey: ['resume', userId] });
       void queryClient.invalidateQueries({ queryKey: ['shelf'] });
+      void queryClient.invalidateQueries({ queryKey: ['library'] });
+      void queryClient.invalidateQueries({ queryKey: ['episodes'] });
+      void queryClient.invalidateQueries({ queryKey: ['seasons'] });
+      void queryClient.invalidateQueries({ queryKey: ['next-up'] });
     },
   });
 
@@ -62,6 +68,10 @@ function Detail(props: { api: Api; serverUrl: string; userId: string; itemId: st
     );
 
   const it = item.data;
+  // Seasons open as their series with that season selected.
+  if (it.Type === 'Season' && it.SeriesId) {
+    return <Navigate to={`/item/${it.SeriesId}?season=${it.Id}`} replace />;
+  }
   const playable = isPlayable(it);
   const backdrop = backdropImageUrl(serverUrl, it);
   const progress = progressPercent(it.UserData?.PlaybackPositionTicks, it.RunTimeTicks);
@@ -97,6 +107,18 @@ function Detail(props: { api: Api; serverUrl: string; userId: string; itemId: st
         </div>
 
         <div className="detail-info">
+          {it.Type === 'Episode' && it.SeriesId && (
+            <p className="detail-crumbs readout" data-testid="detail-crumbs">
+              <Link to={`/item/${it.SeriesId}`}>{it.SeriesName ?? 'Series'}</Link>
+              {it.SeasonId && (
+                <>
+                  {' · '}
+                  <Link to={`/item/${it.SeriesId}?season=${it.SeasonId}`}>{it.SeasonName ?? 'Season'}</Link>
+                </>
+              )}
+              {episodeLabel(it) && ` · ${episodeLabel(it)}`}
+            </p>
+          )}
           <h1 className="detail-title">{it.Name}</h1>
           <p className="detail-meta readout">{meta.join('  ·  ')}</p>
 
@@ -161,6 +183,10 @@ function Detail(props: { api: Api; serverUrl: string; userId: string; itemId: st
           )}
 
           {it.Overview && <p className="detail-overview">{it.Overview}</p>}
+
+          {it.Type === 'Series' && it.Id && (
+            <SeriesEpisodes api={api} serverUrl={serverUrl} userId={userId} seriesId={it.Id} />
+          )}
 
           {it.People && it.People.length > 0 && (
             <div className="detail-people">

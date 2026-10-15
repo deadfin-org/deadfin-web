@@ -49,7 +49,7 @@ docker compose version >/dev/null 2>&1 || fail 'docker compose plugin is require
 # VP9/Opus webm, not h264 mp4: Playwright's Chromium ships without proprietary
 # codecs. 10s duration so playback tests can pause before 'ended'.
 rm -rf .state
-mkdir -p .state/media/movies .state/media/tv .state/media/music .state/media/photos
+mkdir -p .state/media/movies .state/media/archive .state/media/tv .state/media/music .state/media/photos
 
 # Docker Desktop's VirtioFS can silently swallow container writes to fresh
 # bind-mounted dirs (exit 0, no file — observed 2026-07-29). Every generated
@@ -82,6 +82,34 @@ log 'generating synthetic media (ffmpeg from the pinned jellyfin image)'
 gen_movie 'Voyage to the Trench (2021)'    'testsrc2=size=400x600'
 gen_movie 'The Bioluminescent Zone (2019)' 'smptehdbars=size=400x600'
 gen_movie 'Pressure Hull (2024)'           'mandelbrot=size=400x600'
+
+# A 40-title library for paging past the home shelf and the first page of
+# the library grid: one 1 s stub generated once, copied on the host.
+ARCHIVE_COUNT=40
+gen_file "archive-stub.webm" \
+  -f lavfi -i "testsrc2=duration=1:size=320x180:rate=12" \
+  -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -b:v 100k -pix_fmt yuv420p
+for n in $(seq -w 1 "$ARCHIVE_COUNT"); do
+  mkdir -p ".state/media/archive/Archive Reel ${n} (19${n})"
+  cp .state/media/archive-stub.webm ".state/media/archive/Archive Reel ${n} (19${n})/Archive Reel ${n} (19${n}).webm"
+done
+rm .state/media/archive-stub.webm
+
+# A series: two regular episodes and a special. One 10 s episode generated
+# once, copied on the host. The folder names are the standard layout both
+# servers parse (Series (Year)/Season NN/… SxxEyy - Title).
+SHOW='Trench Tales (2020)'
+mkdir -p ".state/media/tv/${SHOW}/Season 01" ".state/media/tv/${SHOW}/Season 00"
+gen_file "tv/episode.webm" \
+  -f lavfi -i "testsrc2=duration=10:size=640x360:rate=24" \
+  -f lavfi -i "sine=frequency=330:duration=10" \
+  -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -b:v 300k -pix_fmt yuv420p \
+  -c:a libopus -b:a 48k -shortest
+gen_file "tv/${SHOW}/poster.jpg" -f lavfi -i 'cellauto=size=400x600' -frames:v 1
+cp .state/media/tv/episode.webm ".state/media/tv/${SHOW}/Season 01/Trench Tales S01E01 - First Dive.webm"
+cp .state/media/tv/episode.webm ".state/media/tv/${SHOW}/Season 01/Trench Tales S01E02 - The Thermocline.webm"
+cp .state/media/tv/episode.webm ".state/media/tv/${SHOW}/Season 00/Trench Tales S00E01 - Behind the Hull.webm"
+rm .state/media/tv/episode.webm
 
 # ---- helpers ----------------------------------------------------------------
 wait_ping() { # $1 = base url
@@ -192,6 +220,12 @@ log 'adding Movies library (internet providers disabled — hermetic)'
 curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' \
   -X POST "$BASE/Library/VirtualFolders?name=Movies&collectionType=movies&refreshLibrary=true" \
   -d '{"LibraryOptions":{"EnableInternetProviders":false,"SaveLocalMetadata":false,"PathInfos":[{"Path":"/media/movies"}]}}' >/dev/null
+curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' \
+  -X POST "$BASE/Library/VirtualFolders?name=Archive&collectionType=movies&refreshLibrary=true" \
+  -d '{"LibraryOptions":{"EnableInternetProviders":false,"SaveLocalMetadata":false,"PathInfos":[{"Path":"/media/archive"}]}}' >/dev/null
+curl -fsS -H "$AUTHED" -H 'Content-Type: application/json' \
+  -X POST "$BASE/Library/VirtualFolders?name=Shows&collectionType=tvshows&refreshLibrary=true" \
+  -d '{"LibraryOptions":{"EnableInternetProviders":false,"SaveLocalMetadata":false,"PathInfos":[{"Path":"/media/tv"}]}}' >/dev/null
 
 # Loosen resume thresholds for 10s media.
 if ! curl -fsS -H "$AUTHED" "$BASE/System/Configuration" |
@@ -200,16 +234,28 @@ if ! curl -fsS -H "$AUTHED" "$BASE/System/Configuration" |
   [ "$SEED" = soft ] && warn 'resume thresholds not settable through /System/Configuration — parity finding' || fail 'configuring resume thresholds failed'
 fi
 
-log 'waiting for the scan to surface 3 movies'
+WANT=$((3 + ARCHIVE_COUNT))
+log "waiting for the scan to surface ${WANT} movies"
 for i in $(seq 1 60); do
   COUNT=$(curl -fsS -H "$AUTHED" \
     "$BASE/Items?userId=${USER_ID}&recursive=true&includeItemTypes=Movie" |
     python3 -c 'import json,sys; print(json.load(sys.stdin).get("TotalRecordCount",0))' || echo 0)
-  [ "${COUNT:-0}" -ge 3 ] && break
-  [ "$i" = 60 ] && fail "scan stalled at ${COUNT:-0}/3 movies"
+  [ "${COUNT:-0}" -ge "$WANT" ] && break
+  [ "$i" = 60 ] && fail "scan stalled at ${COUNT:-0}/${WANT} movies"
   sleep 2
 done
 log "scan complete (${COUNT} movies)"
+log 'waiting for the scan to surface 3 episodes'
+for i in $(seq 1 60); do
+  EPS=$(curl -fsS -H "$AUTHED" \
+    "$BASE/Items?userId=${USER_ID}&recursive=true&includeItemTypes=Episode" |
+    python3 -c 'import json,sys; print(json.load(sys.stdin).get("TotalRecordCount",0))' || echo 0)
+  [ "${EPS:-0}" -ge 3 ] && break
+  if [ "$i" = 60 ]; then
+    [ "$SEED" = soft ] && { warn "episode scan stalled at ${EPS:-0}/3 — parity finding"; break; } || fail "episode scan stalled at ${EPS:-0}/3"
+  fi
+  sleep 2
+done
 seed_user_data "$SEED"
 
 # ---- 4. browser acceptance --------------------------------------------------
