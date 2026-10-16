@@ -88,10 +88,23 @@ ways:
   path to the server. This nginx site does both:
 
 ```nginx
+# Media URLs carry the access token in the api_key query parameter. This
+# log format records the path without the query string.
+log_format deadfin_web '$remote_addr - $remote_user [$time_local] '
+                       '"$request_method $uri $server_protocol" $status $body_bytes_sent';
+
 server {
   listen 80;
   root /srv/deadfin-web;   # the contents of dist/
   absolute_redirect off;
+  access_log /var/log/nginx/access.log deadfin_web;
+
+  # Hardening. no-referrer keeps media URLs (and their api_key) out of the
+  # Referer header. The CSP admits only this site, which the proxy below
+  # makes the server too.
+  add_header Referrer-Policy "no-referrer" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" always;
 
   # The app and its assets.
   location = /            { try_files /index.html =404; }
@@ -113,6 +126,17 @@ that served the page (the page's origin, plus the base URL when the app is
 at `<base>/web/`), which is right for both setups above. To use a server on another
 address, type its URL on the sign-in page. Deadfin and Jellyfin both allow
 cross-origin requests, so this works without the proxy.
+
+To sign in to a server on another address under this CSP, add the server's
+origin (for example `https://media.example.com`) to `img-src`, `media-src`
+and `connect-src`. The acceptance harness does this in
+[`e2e/harness/nginx-app.conf`](e2e/harness/nginx-app.conf).
+
+**Logs.** Media and subtitle URLs carry the access token in the `api_key`
+query parameter, because `<video>` and `<track>` cannot send an
+Authorization header. Redact `api_key` (and `ApiKey`) in the access logs of
+every proxy in front of the app or the server. The `deadfin_web` log format
+above records paths without query strings.
 
 The browser must reach the app over `https://` or `http://localhost`. The
 app uses the Web Crypto API, which browsers offer only in a secure context.

@@ -13,6 +13,19 @@ Release assets: `ghcr.io/deadfin-org/deadfin-web:<tag>` and
 
 ## [Unreleased]
 
+### Security
+
+- **Subtitle and transcode URLs send the access token only to the server
+  you signed in to.** Before, the player added `api_key=<token>` to an
+  absolute external WebVTT `DeliveryUrl` and fetched it, so a subtitle on
+  another host received the token. Now a media URL gets the token only when
+  its origin is the server's origin and the server does not mark the stream
+  `IsExternalUrl`.
+- **Hardening headers in the nginx example.** The README site now sends
+  `Referrer-Policy: no-referrer` and a Content-Security-Policy that the
+  acceptance suite runs under, and logs paths without the `api_key` query
+  parameter.
+
 ## [0.3.0-rc.3]
 
 Release candidate for the v0.3.0 alpha. deadfin-web runs from a Deadfin

@@ -91,6 +91,7 @@ services:
       HOME: /tmp
       CI: '1'
       PW_BASE_URL: http://localhost
+      HARNESS_CSP: '1'
       HARNESS_SERVER: http://server:8096
       EVIDENCE_DIR: /work/e2e/evidence/deadfin-cross
       HARNESS_PRODUCT: Deadfin

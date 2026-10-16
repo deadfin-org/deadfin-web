@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 // Runs against a server nobody has set up (the harness's `fresh` service).
 const SERVER = process.env.HARNESS_SERVER ?? 'http://localhost:8099';

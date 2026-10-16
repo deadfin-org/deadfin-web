@@ -121,7 +121,11 @@ function PlayerInner({ itemId }: { itemId: string }) {
     if (!track?.text) return;
     let url: string | undefined;
     let cancelled = false;
-    fetch(subtitleUrl(session.serverUrl, itemId, source.media, subtitle, session.accessToken))
+    // subtitleUrl adds the token only for the server itself. 'same-origin'
+    // (the default, stated here) sends no cookies to an external host.
+    fetch(subtitleUrl(session.serverUrl, itemId, source.media, subtitle, session.accessToken), {
+      credentials: 'same-origin',
+    })
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((text) => {
         if (cancelled) return;

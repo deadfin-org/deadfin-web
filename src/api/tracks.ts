@@ -1,5 +1,6 @@
 import type { components } from './schema';
 import type { MediaSource } from './playback';
+import { mediaUrl } from './mediaUrl';
 
 type MediaStream = components['schemas']['MediaStream'];
 type SubtitleProfile = components['schemas']['SubtitleProfile'];
@@ -56,7 +57,10 @@ export function defaultSubtitleIndex(media: MediaSource): number | null {
   return typeof d === 'number' && d >= 0 ? d : null;
 }
 
-/** The WebVTT for a text subtitle stream, with the token for a plain fetch. */
+/**
+ * The WebVTT for a text subtitle stream, for a plain fetch. The token goes
+ * only to the server itself, never to an external DeliveryUrl.
+ */
 export function subtitleUrl(
   serverUrl: string,
   itemId: string,
@@ -71,9 +75,7 @@ export function subtitleUrl(
     delivered && /\.vtt(\?|$)/i.test(delivered)
       ? delivered
       : `/Videos/${itemId}/${media.Id}/Subtitles/${index}/0/Stream.vtt`;
-  const url = new URL(/^https?:/.test(path) ? path : serverUrl.replace(/\/$/, '') + path);
-  if (!url.searchParams.has('api_key') && !url.searchParams.has('ApiKey')) url.searchParams.set('api_key', token);
-  return url.toString();
+  return mediaUrl(serverUrl, path, token, { external: path === delivered && stream?.IsExternalUrl === true });
 }
 
 /** What a track choice asks of the server. */

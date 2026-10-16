@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 /** A home shelf by library name. */
 const shelf = (page: Page, name: string) =>
@@ -19,7 +19,13 @@ async function descend(page: Page) {
 }
 
 test('descend: connect → login → home grid renders the library', async ({ page }) => {
-  await page.goto('./#/login');
+  const front = await page.goto('./#/login');
+  // The static front sends the README's hardening headers; the CSP guard
+  // (fixtures.ts) then fails any test the policy would break.
+  if (process.env.HARNESS_CSP) {
+    expect(front?.headers()['content-security-policy']).toContain("default-src 'self'");
+    expect(front?.headers()['referrer-policy']).toBe('no-referrer');
+  }
   await expect(page.getByRole('heading', { name: 'DEADFIN' })).toBeVisible();
   await expect(page.locator('.login-panel')).toHaveCSS('opacity', '1');
   await page.getByLabel('server').fill(SERVER);

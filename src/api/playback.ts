@@ -2,6 +2,7 @@ import type { components } from './schema';
 import type { Api } from './client';
 import { deviceId } from './session';
 import { SUBTITLE_PROFILES, type StreamRequest } from './tracks';
+import { mediaUrl } from './mediaUrl';
 
 type DeviceProfile = components['schemas']['DeviceProfile'];
 export type MediaSource = components['schemas']['MediaSourceInfo'];
@@ -145,12 +146,11 @@ export function pickSource(info: PlaybackInfo): { media: MediaSource; method: Pl
 /**
  * The server's HLS playlist for a transcode. TranscodingUrl is relative to
  * the server and normally carries the token; add it when it does not, since
- * hls.js segment requests can send headers but native HLS cannot.
+ * hls.js segment requests can send headers but native HLS cannot. A
+ * TranscodingUrl that resolves to another origin gets no token.
  */
 export function transcodeUrl(serverUrl: string, source: MediaSource, token: string): string {
-  const url = new URL(serverUrl.replace(/\/$/, '') + (source.TranscodingUrl ?? ''));
-  if (!url.searchParams.has('api_key') && !url.searchParams.has('ApiKey')) url.searchParams.set('api_key', token);
-  return url.toString();
+  return mediaUrl(serverUrl, source.TranscodingUrl ?? '', token);
 }
 
 /**
