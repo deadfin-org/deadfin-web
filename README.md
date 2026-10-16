@@ -33,24 +33,29 @@ jellyfin-web does.
 
 **Works today:**
 
-- Sign in with a server address, user name and password.
-- Home: a Continue Watching shelf and one shelf per library, with blurhash
-  placeholders while posters load. Each shelf shows the first 30 items by
-  name; there is no full library page yet.
+- Sign in with a server address, user name and password. Sign-out ends the
+  server session. A revoked or expired token returns to sign-in.
+- First-run setup of a new server: administrator, libraries with a folder
+  browser, and remote access.
+- Home: Continue Watching, Next Up, and one shelf per library, with
+  blurhash placeholders while posters load. Each shelf shows the first 30
+  items by name.
 - Item pages with overview and details. Mark played or unplayed, and
   favorite or unfavorite.
-- Direct play of webm (VP8, VP9, AV1) and mp4 (H.264, HEVC and AV1 where
-  the browser decodes them), with start, progress and stop reported to the
-  server, so resume points and played state stay in sync.
+- TV: series pages with season tabs and episodes, "Play next", and an "Up
+  next" countdown at the end of an episode.
+- Search across libraries.
+- Playback: direct play of what the browser decodes, and HLS transcoding
+  (with hls.js outside Safari) for the rest. Audio and subtitle track
+  selection. Start, progress and stop go to the server, so resume points and
+  played state stay in sync.
+- Quick Connect: sign in a TV or phone app with its code.
+- An about panel with the client and server builds.
 
 **Not available yet:**
 
-- TV shows and music albums appear on the home page, but you cannot open
-  their seasons, episodes or tracks.
-- Transcoding. Files the browser cannot play directly, which includes most
-  mkv files, show an error.
-- Subtitles, audio track selection, search, user settings, first-run setup
-  and the admin dashboard.
+- Full library pages, music album and track pages, and person pages.
+- User settings and the admin dashboard.
 
 Use jellyfin-web at `/web` for these.
 
