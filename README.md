@@ -222,7 +222,7 @@ the release tarball and image carry them next to the font files.
 Report security problems privately through GitHub private vulnerability
 reporting on the server repository:
 <https://github.com/deadfin-org/deadfin/security/advisories/new>.
-See the Deadfin [security policy](https://github.com/deadfin-org/deadfin/blob/master/SECURITY.md).
+See [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
@@ -233,6 +233,10 @@ mention deadfin-web in the title. Ask questions in
 Read the Deadfin
 [contributing guide](https://github.com/deadfin-org/deadfin/blob/master/CONTRIBUTING.md)
 first.
+
+Each pull request runs the unit tests, the build and both acceptance suites
+on the project's Gitea CI. GitHub Actions runs the unit tests and the build
+on release tags.
 
 ## Acknowledgements
 
