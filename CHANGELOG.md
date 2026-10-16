@@ -13,6 +13,12 @@ Release assets: `ghcr.io/deadfin-org/deadfin-web:<tag>` and
 
 ## [Unreleased]
 
+## [0.3.0-rc.4]
+
+Release candidate for the v0.3.0 alpha. It fixes an access-token leak to
+external subtitle hosts. The Deadfin server image v0.3.0-rc.7 and later
+bundles this release at `/web/`.
+
 ### Security
 
 - **Subtitle and transcode URLs send the access token only to the server
