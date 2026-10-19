@@ -1,8 +1,18 @@
 import { expect, test, type Page } from './fixtures';
 
-/** A home shelf by library name. */
-const shelf = (page: Page, name: string) =>
-  page.getByTestId('shelf').filter({ has: page.getByTestId('shelf-link').filter({ hasText: new RegExp(`^${name}$`) }) });
+/** A home "Recently Added in …" row by library name. */
+const latest = (page: Page, name: string) =>
+  page
+    .getByTestId('shelf')
+    .filter({ has: page.getByTestId('shelf-link').filter({ hasText: new RegExp(`^Recently Added in ${name}\\b`) }) });
+
+/** Opens a library from the My Media row on Home; returns its streamed grid. */
+async function openLibrary(page: Page, name: string) {
+  await page.goto('./#/home');
+  await page.getByTestId('my-media').getByRole('link', { name, exact: true }).click();
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+  return page.getByTestId('library-grid');
+}
 
 const SERVER = process.env.HARNESS_SERVER ?? 'http://localhost:8097';
 const EVIDENCE = (process.env.EVIDENCE_DIR ?? new URL('./evidence', import.meta.url).pathname) + '/';
@@ -42,10 +52,11 @@ test('sign in: connect → login → home grid renders the library', async ({ pa
   await expect(page.getByTestId('about-web')).toContainText('web ');
   await page.keyboard.press('Escape');
 
-  // The Movies shelf surfaces with all three seeded movies…
-  const moviesShelf = shelf(page, 'Movies');
+  // My Media lists the libraries; Recently Added in Movies surfaces…
+  await expect(page.getByTestId('my-media').getByRole('link', { name: 'Movies', exact: true })).toBeVisible({ timeout: 20_000 });
+  const moviesShelf = latest(page, 'Movies');
   await expect(moviesShelf).toBeVisible({ timeout: 20_000 });
-  await expect(moviesShelf.getByTestId('poster')).toHaveCount(3, { timeout: 20_000 });
+  await expect(moviesShelf.getByTestId('poster').first()).toBeVisible({ timeout: 20_000 });
 
   // …and at least one real poster image finishes loading.
   await expect(page.locator('.poster-img.is-loaded').first()).toBeVisible({ timeout: 30_000 });
@@ -79,10 +90,6 @@ test('continue watching, item detail, user-data toggles', async ({ page }) => {
   await expect(resume.getByTestId('poster')).toHaveCount(1);
   await expect(resume.getByTestId('poster-progress')).toBeVisible();
 
-  // The played movie wears its surfaced badge in the library shelf.
-  await expect(shelf(page, 'Movies').getByTestId('poster-played')).toHaveCount(1, {
-    timeout: 20_000,
-  });
   await page.screenshot({ path: `${EVIDENCE}04-home-userdata.png`, fullPage: true });
 
   // Into the detail page via the resume card.
@@ -109,6 +116,11 @@ test('continue watching, item detail, user-data toggles', async ({ page }) => {
   await expect(page.getByTestId('toggle-favorite')).toHaveClass(/is-on/);
   await page.getByTestId('toggle-favorite').click();
   await expect(page.getByTestId('toggle-favorite')).not.toHaveClass(/is-on/);
+
+  // The played movie wears its played badge in the library grid.
+  const grid = await openLibrary(page, 'Movies');
+  await expect(grid.getByTestId('poster')).toHaveCount(3, { timeout: 20_000 });
+  await expect(grid.getByTestId('poster-played')).toHaveCount(1);
 });
 
 test('direct play, controls, and server-verified progress reporting', async ({ page }) => {
@@ -230,21 +242,17 @@ test('a revoked token returns to sign-in with a message', async ({ page }) => {
   expect(await page.evaluate(() => localStorage.getItem('deadfin.session.v1'))).toBeNull();
 });
 
-test('library page: count, paging past the shelf, sort and filter', async ({ page }) => {
+test('library page: count, paging, sort, filter and alphabet', async ({ page }) => {
   await signIn(page);
 
-  // The home shelf shows the newest 24 and the real total.
-  const archive = shelf(page, 'Archive');
-  await expect(archive.getByTestId('shelf-count')).toHaveText(/^40 items/, { timeout: 20_000 });
-  await expect(archive.getByTestId('poster')).toHaveCount(24);
-
-  await archive.getByTestId('shelf-link').click();
-  await expect(page).toHaveURL(/#\/library\//);
-  await expect(page.getByRole('heading', { name: 'Archive' })).toBeVisible();
+  // Home shows the newest of the library; the library page has everything.
+  await expect(latest(page, 'Archive').getByTestId('poster').first()).toBeVisible({ timeout: 20_000 });
+  const grid = await openLibrary(page, 'Archive');
+  await expect(page).toHaveURL(/#\/movies\?topParentId=/);
+  await expect(page.getByRole('tab', { selected: true })).toHaveText('Movies');
   await expect(page.getByTestId('library-count')).toHaveText('40 items');
 
   // 40 titles, 36 per page: the second page arrives on scroll or on demand.
-  const grid = page.getByTestId('library-grid');
   await expect(grid.getByTestId('poster')).not.toHaveCount(0);
   const more = page.getByTestId('library-more');
   if (await more.isVisible()) await more.click();
@@ -252,14 +260,68 @@ test('library page: count, paging past the shelf, sort and filter', async ({ pag
   await expect(grid.getByTestId('item-link').first()).toContainText('Archive Reel 01');
   await page.screenshot({ path: `${EVIDENCE}07-library.png`, fullPage: true });
 
-  // Name, descending.
-  await page.getByRole('button', { name: /switch to descending/ }).click();
+  // Sort menu: choosing Name again flips it to descending, as in jellyfin-web.
+  await page.getByRole('button', { name: /^Sort: Name/ }).click();
+  await page.getByRole('menuitemradio', { name: /^Name/ }).click();
   await expect(grid.getByTestId('item-link').first()).toContainText('Archive Reel 40');
-  await expect(page).toHaveURL(/order=desc/);
+  await expect(page).toHaveURL(/sortOrder=Descending/);
 
-  // Nothing in this library is played.
-  await page.getByLabel('Show').selectOption('played');
+  // Filter dialog: nothing in this library is played.
+  await page.getByRole('button', { name: /^Filter/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Filters' });
+  await dialog.getByLabel('Played', { exact: true }).check();
   await expect(page.getByTestId('library-empty')).toBeVisible();
+  await expect(page).toHaveURL(/filters=IsPlayed/);
+  await dialog.getByRole('button', { name: 'Reset filters' }).click();
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(page.getByTestId('library-count')).toHaveText('40 items');
+
+  // Alphabet picker: no title starts with Z.
+  await page.getByRole('group', { name: 'Alphabet' }).getByRole('button', { name: 'Z', exact: true }).click();
+  await expect(page.getByTestId('library-empty')).toBeVisible();
+  await page.getByRole('group', { name: 'Alphabet' }).getByRole('button', { name: 'A', exact: true }).click();
+  await expect(page.getByTestId('library-count')).toHaveText('40 items');
+
+  // The old path still lands on the library.
+  const url = new URL(page.url().replace('#/', ''));
+  await page.goto(`./#/library/${url.searchParams.get('topParentId')}`);
+  await expect(page).toHaveURL(/#\/movies\?topParentId=/);
+});
+
+test('library tabs and home favorites follow jellyfin-web', async ({ page }) => {
+  await signIn(page);
+  const { headers, userId } = await sessionApi(page);
+  const grid = await openLibrary(page, 'Movies');
+  await expect(page.getByRole('tab')).toHaveText(['Movies', 'Suggestions', 'Favorites', 'Collections', 'Genres', 'Studios', 'Playlists']);
+  const voyage = grid.getByTestId('item-link').filter({ hasText: 'Voyage to the Trench' });
+  const id = new URLSearchParams((await voyage.getAttribute('href'))!.split('?')[1]).get('id')!;
+
+  // Suggestions: the in-progress movie is in Continue Watching.
+  await page.getByRole('tab', { name: 'Suggestions' }).click();
+  await expect(page).toHaveURL(/tab=1/);
+  await expect(page.getByTestId('suggestion-row').filter({ hasText: 'Continue Watching' }).getByTestId('poster')).toHaveCount(1, {
+    timeout: 15_000,
+  });
+
+  // Favorites tab and Home → Favorites show a favorite movie.
+  await page.request.post(`${SERVER}/UserFavoriteItems/${id}?userId=${userId}`, { headers });
+  try {
+    await page.getByRole('tab', { name: 'Favorites' }).click();
+    await expect(page.getByTestId('library-grid').getByTestId('poster')).toHaveCount(1, { timeout: 15_000 });
+    await page.getByRole('tab', { name: 'Collections' }).click();
+    await expect(page.getByTestId('library-empty')).toBeVisible();
+
+    await page.goto('./#/home?tab=1');
+    const movies = page.getByTestId('favorites-row').filter({ hasText: 'Movies' }).first();
+    await expect(movies.getByText('Voyage to the Trench')).toBeVisible({ timeout: 15_000 });
+    await page.screenshot({ path: `${EVIDENCE}21-favorites.png`, fullPage: true });
+    // The row title opens the list of favorite movies.
+    await movies.getByTestId('shelf-link').click();
+    await expect(page).toHaveURL(/#\/list\?type=Movie&IsFavorite=true/);
+    await expect(page.getByTestId('library-count')).toHaveText('1 item');
+  } finally {
+    await page.request.delete(`${SERVER}/UserFavoriteItems/${id}?userId=${userId}`, { headers });
+  }
 });
 
 /** Auth headers and user id of the signed-in browser session, for API checks. */
@@ -292,7 +354,7 @@ test('tv: series, seasons, episodes, next up and up next', async ({ page }) => {
   await page.reload();
 
   // Series card → series page: no Play button for the series itself, seasons as tabs.
-  await shelf(page, 'Shows').getByTestId('item-link').first().click();
+  await (await openLibrary(page, 'Shows')).getByTestId('item-link').first().click();
   await expect(page.getByTestId('series')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('heading', { name: 'Trench Tales' })).toBeVisible();
   await expect(page.getByTestId('action-play')).toHaveCount(0);
@@ -324,7 +386,7 @@ test('tv: series, seasons, episodes, next up and up next', async ({ page }) => {
   await expect(nextUp.getByTestId('poster').first()).toContainText('S1:E2');
 
   // From the series, play episode 1 to its end: the next episode is offered.
-  await shelf(page, 'Shows').getByTestId('item-link').first().click();
+  await (await openLibrary(page, 'Shows')).getByTestId('item-link').first().click();
   await expect(page.getByTestId('series-play-next')).toContainText('S1:E2');
   await page.getByRole('button', { name: /^Play S1:E1/ }).click();
   const video = page.getByTestId('player-video');
@@ -346,7 +408,7 @@ test('tv: marking an episode played sticks', async ({ page }) => {
   await signIn(page);
   await resetEpisodes(page);
   await page.reload();
-  await shelf(page, 'Shows').getByTestId('item-link').first().click();
+  await (await openLibrary(page, 'Shows')).getByTestId('item-link').first().click();
   await page.getByTestId('episode-row').first().getByRole('link', { name: /First Dive/ }).click();
   await page.getByTestId('toggle-played').click();
   await expect(page.getByTestId('toggle-played')).toHaveClass(/is-on/);
@@ -385,6 +447,8 @@ test('quick connect: a waiting device is signed in by its code', async ({ page }
 test('search: results grouped by kind, links to the item, empty state', async ({ page }) => {
   await signIn(page);
   await page.getByTestId('search-link').click();
+  // An empty search suggests titles to try.
+  await expect(page.getByTestId('search-suggestions').getByRole('link').first()).toBeVisible({ timeout: 15_000 });
   await page.getByRole('searchbox', { name: 'Search' }).fill('trench');
   await expect(page).toHaveURL(/search\?q=trench/);
   const movies = page.getByTestId('search-group').filter({ hasText: 'Movies' });
@@ -517,8 +581,8 @@ test('app bar, drawer, user menu and dashboard follow jellyfin-web', async ({ pa
   const drawer = page.getByRole('navigation', { name: 'Main menu' });
   await expect(drawer.getByRole('link', { name: 'Home' })).toBeVisible();
   await expect(drawer.getByRole('link', { name: 'Favorites' })).toBeVisible();
-  await drawer.getByRole('link', { name: 'Movies' }).click();
-  await expect(page).toHaveURL(/#\/library\//);
+  await drawer.getByRole('link', { name: 'Movies', exact: true }).click();
+  await expect(page).toHaveURL(/#\/movies\?topParentId=/);
   await expect(drawer).toBeHidden();
 
   // User menu → Dashboard (the harness user is an administrator).

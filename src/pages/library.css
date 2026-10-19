@@ -69,3 +69,239 @@
 .library-back:hover {
   color: var(--biolum);
 }
+
+.library-tabs {
+  padding: 4px clamp(16px, 4vw, 40px) 0;
+}
+
+.library-tabs .tabs {
+  margin-bottom: 0;
+}
+
+.library-controls {
+  padding: 0;
+}
+
+/* One row of cards that scrolls sideways (home sections, suggestions, genres). */
+.shelf-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 136px;
+  gap: 14px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  padding-bottom: 6px;
+  min-height: 240px;
+}
+
+.shelf-row > * {
+  scroll-snap-align: start;
+}
+
+@media (min-width: 1400px) {
+  .shelf-row {
+    grid-auto-columns: 160px;
+  }
+}
+
+.library-tiles {
+  grid-auto-columns: 240px;
+  min-height: 0;
+}
+
+.library-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.library-tile-frame {
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--abyss-1);
+  border: 1px solid var(--hairline);
+}
+
+.library-tile-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.library-tile:hover .library-tile-frame {
+  border-color: var(--biolum);
+}
+
+.library-tile-name {
+  text-align: center;
+}
+
+.library-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.library-buttons a {
+  text-decoration: none;
+}
+
+.genre-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.popover-anchor {
+  position: relative;
+}
+
+.popover-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  max-height: 70vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  background: var(--abyss-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-raise);
+}
+
+.popover-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.popover-item:hover,
+.popover-item:focus-visible,
+.popover-item[aria-checked='true'] {
+  background: var(--abyss-2);
+  color: var(--biolum);
+}
+
+.filter-dialog {
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  padding: 0;
+  background: var(--abyss-1);
+  color: var(--bone);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-raise);
+}
+
+.filter-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.filter-body {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.filter-title {
+  margin: 0;
+  font-size: 19px;
+}
+
+.filter-section {
+  border: 0;
+  border-top: 1px solid var(--hairline);
+  margin: 0;
+  padding: 10px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-legend {
+  color: var(--steel);
+  padding: 0 0 4px;
+}
+
+.filter-values {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.alphabet-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.alphabet-letter {
+  min-width: 26px;
+  padding: 3px 4px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--steel);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.alphabet-letter:hover,
+.alphabet-letter[aria-pressed='true'] {
+  color: var(--biolum);
+  background: var(--abyss-2);
+}
+
+.search-suggestions {
+  text-align: center;
+}
+
+.search-suggestions ul {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.search-suggestions a {
+  color: inherit;
+}
+
+.search-suggestions a:hover {
+  color: var(--biolum);
+}
+
+.library-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}

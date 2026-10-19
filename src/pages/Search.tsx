@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { keepPreviousData, useQueries, useQuery } from '@tanstack/react-query';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../api/AuthContext';
-import { fetchSearch } from '../api/search';
-import { ItemCard } from '../components/ItemCard';
+import type { BaseItem } from '../api/library';
+import { fetchSearchSuggestions, groupResults, SEARCH_PARTS } from '../api/search';
+import { itemUrl } from '../routes/paths';
+import { Shelf } from './library/Shelf';
 import './home.css';
 import './library.css';
 import './search.css';
@@ -22,14 +24,21 @@ export function Search() {
     return () => clearTimeout(t);
   }, [text, term, setParams]);
 
-  const results = useQuery({
-    queryKey: ['search', session?.userId, term],
-    enabled: !!api && !!session && term.length > 0,
-    queryFn: () => fetchSearch(api!, session!.userId, term),
-    placeholderData: keepPreviousData,
+  const parts = useQueries({
+    queries: SEARCH_PARTS.map((p) => ({
+      queryKey: ['search', p.key, session?.userId, term],
+      enabled: !!api && !!session && term.length > 0,
+      queryFn: () => p.run(api!, session!.userId, term),
+      placeholderData: keepPreviousData,
+    })),
   });
 
   if (!session || !api) return null;
+
+  const answered = parts.filter((p) => p.data);
+  const groups = groupResults(answered.flatMap((p) => p.data ?? []));
+  const pending = parts.some((p) => p.isPending || p.isPlaceholderData);
+  const failed = parts.every((p) => p.isError);
 
   return (
     <div className="home">
@@ -38,7 +47,7 @@ export function Search() {
           className="search-input"
           type="search"
           aria-label="Search"
-          placeholder="Search movies, shows, music…"
+          placeholder="Search"
           value={text}
           onChange={(e) => setText(e.target.value)}
           autoFocus
@@ -47,32 +56,58 @@ export function Search() {
       </header>
 
       <main className="home-main" data-testid="search-results">
-        {!term ? null : results.isError ? (
+        {!term ? (
+          <Suggestions />
+        ) : failed ? (
           <p className="home-status readout" role="alert">
             Search failed.
           </p>
-        ) : !results.data ? (
+        ) : groups.length === 0 && pending ? (
           <p className="home-status readout">Searching…</p>
-        ) : results.data.length === 0 ? (
+        ) : groups.length === 0 ? (
           <p className="home-status readout" data-testid="search-empty">
-            nothing matches “{term}”
+            Sorry! No results found for “{term}”
           </p>
         ) : (
-          results.data.map((g) => (
-            <section key={g.type} className="shelf" data-testid="search-group">
-              <h2 className="shelf-head">
-                <span className="shelf-name">{g.label}</span>
-                <span className="readout">{g.items.length}</span>
-              </h2>
-              <div className="shelf-grid">
-                {g.items.map((item) => (
-                  <ItemCard key={item.Id} serverUrl={session.serverUrl} item={item} />
-                ))}
-              </div>
-            </section>
+          groups.map((g) => (
+            <Shelf
+              key={g.label}
+              title={
+                <>
+                  {g.label} <span className="readout">{g.items.length}</span>
+                </>
+              }
+              items={g.items}
+              serverUrl={session.serverUrl}
+              testId="search-group"
+            />
           ))
         )}
       </main>
     </div>
+  );
+}
+
+/** jellyfin-web `SearchSuggestions`: a short list of names to try. */
+function Suggestions() {
+  const { session, api } = useAuth();
+  const q = useQuery({
+    queryKey: ['search-suggestions', session?.userId],
+    enabled: !!api && !!session,
+    staleTime: 5 * 60_000,
+    queryFn: () => fetchSearchSuggestions(api!, session!.userId),
+  });
+  if (!q.data?.length) return null;
+  return (
+    <section className="search-suggestions" data-testid="search-suggestions">
+      <h2 className="shelf-name">Suggestions</h2>
+      <ul>
+        {q.data.map((item: BaseItem) => (
+          <li key={item.Id}>
+            <Link to={itemUrl(item)}>{item.Name}</Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

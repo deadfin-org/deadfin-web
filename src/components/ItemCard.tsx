@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { primaryBlurhash, primaryImageUrl } from '../api/client';
 import { episodeLabel } from '../api/tv';
-import { detailsUrl } from '../routes/paths';
+import { itemUrl } from '../routes/paths';
 import { Poster } from './Poster';
 
 type CardItem = {
@@ -17,21 +17,24 @@ type CardItem = {
   SeriesPrimaryImageTag?: string | null;
   ParentIndexNumber?: number | null;
   IndexNumber?: number | null;
+  IsFolder?: boolean | null;
+  CollectionType?: string | null;
 };
 
 /**
  * Item card shared by every shelf and grid: poster + link + user-data
  * overlays. An episode wears its series' poster and an "S1:E2" caption, so
- * Continue Watching and Next Up stay readable.
+ * Continue Watching and Next Up stay readable. The link goes where
+ * jellyfin-web sends that item type (`itemUrl`), unless `to` says otherwise.
  */
-export function ItemCard(props: { serverUrl: string; item: CardItem }) {
+export function ItemCard(props: { serverUrl: string; item: CardItem; to?: string }) {
   const { serverUrl, item } = props;
   const episode = item.Type === 'Episode' && !!item.SeriesId && !!item.SeriesPrimaryImageTag;
   const imageUrl = episode
     ? primaryImageUrl(serverUrl, { Id: item.SeriesId, ImageTags: { Primary: item.SeriesPrimaryImageTag ?? null } })
     : primaryImageUrl(serverUrl, item);
   return (
-    <Link to={detailsUrl(item.Id ?? '')} className="card-link" data-testid="item-link">
+    <Link to={props.to ?? itemUrl(item)} className="card-link" data-testid="item-link">
       <Poster
         title={(item.Type === 'Episode' ? item.SeriesName : item.Name) ?? item.Name ?? 'Untitled'}
         imageUrl={imageUrl}

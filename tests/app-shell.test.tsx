@@ -79,7 +79,7 @@ describe('app shell', () => {
     const drawer = screen.getByRole('navigation', { name: 'Main menu' });
     expect(within(drawer).getByRole('link', { name: 'Home' })).toBeTruthy();
     expect(within(drawer).getByRole('link', { name: 'Favorites' }).getAttribute('href')).toBe('/home?tab=1');
-    expect((await within(drawer).findByRole('link', { name: 'Movies' })).getAttribute('href')).toBe('/library/v1');
+    expect((await within(drawer).findByRole('link', { name: 'Movies' })).getAttribute('href')).toBe('/movies?topParentId=v1&collectionType=movies');
   });
 
   it('user menu offers Dashboard to administrators only', async () => {

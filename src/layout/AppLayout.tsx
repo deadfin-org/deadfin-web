@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../api/AuthContext';
 import { fetchUserViews, type BaseItem } from '../api/library';
 import { useServerInfo } from '../api/serverInfo';
@@ -124,8 +124,6 @@ export function Drawer(props: {
   );
 }
 
-const navClass = ({ isActive }: { isActive: boolean }) => (isActive ? 'drawer-link is-active' : 'drawer-link');
-
 /** Home, Favorites, then the user's libraries. */
 function MainDrawerContent() {
   const { session, api } = useAuth();
@@ -134,7 +132,9 @@ function MainDrawerContent() {
     queryKey: ['user-views', session!.userId],
     queryFn: () => fetchUserViews(api!, session!.userId),
   });
-  const tab = new URLSearchParams(location.search).get('tab');
+  const query = new URLSearchParams(location.search);
+  const tab = query.get('tab');
+  const topParentId = query.get('topParentId');
   const onHome = location.pathname === paths.home;
   return (
     <>
@@ -159,10 +159,15 @@ function MainDrawerContent() {
           </li>
           {views.data.map((v) => (
             <li key={v.Id}>
-              <NavLink to={libraryUrl(v.Id ?? '')} className={navClass} data-testid="drawer-library">
+              <Link
+                to={libraryUrl(v)}
+                className={topParentId === v.Id ? 'drawer-link is-active' : 'drawer-link'}
+                aria-current={topParentId === v.Id ? 'page' : undefined}
+                data-testid="drawer-library"
+              >
                 <DrawerIcon d={libraryIcon(v)} />
                 {v.Name}
-              </NavLink>
+              </Link>
             </li>
           ))}
         </ul>
