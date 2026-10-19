@@ -4,7 +4,7 @@ import { LIBRARY_KINDS, listFolders, parentPath, type CollectionType, type Folde
 import './library-form.css';
 
 /** Browse the server's folders; picking one fills the path. */
-function FolderPicker({ api, start, onPick }: { api: Api; start: string; onPick: (path: string) => void }) {
+export function FolderPicker({ api, start, onPick }: { api: Api; start: string; onPick: (path: string) => void }) {
   const [path, setPath] = useState(start || '/');
   const [folders, setFolders] = useState<Folder[] | null>(null);
   const [error, setError] = useState<string | null>(null);

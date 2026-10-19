@@ -1,5 +1,4 @@
 import { lazy, Suspense, type ComponentType, type ReactElement } from 'react';
-import { DashboardHome } from '../pages/dashboard/DashboardHome';
 import { lazyPage } from './lazyPage';
 
 type PlaybackPages = typeof import('../pages/dashboard/playbackPages');
@@ -19,7 +18,17 @@ function playbackPage(name: keyof PlaybackPages): ReactElement {
  * drawer (src/routes/dashboardNav.ts) shows the entries registered here.
  */
 export const dashboardRoutes: { path: string; element: ReactElement }[] = [
-  { path: '', element: <DashboardHome /> },
+  // #84 dashboard core: home, general, users, libraries, scheduled tasks.
+  { path: '', element: lazyPage(() => import('../pages/dashboard/DashboardHome').then((m) => m.DashboardHome)) },
+  { path: 'settings', element: lazyPage(() => import('../pages/dashboard/General').then((m) => m.General)) },
+  { path: 'users', element: lazyPage(() => import('../pages/dashboard/Users').then((m) => m.Users)) },
+  { path: 'users/add', element: lazyPage(() => import('../pages/dashboard/UserAdd').then((m) => m.UserAdd)) },
+  { path: 'users/:userId/:tab', element: lazyPage(() => import('../pages/dashboard/UserEdit').then((m) => m.UserEdit)) },
+  { path: 'libraries', element: lazyPage(() => import('../pages/dashboard/Libraries').then((m) => m.Libraries)) },
+  { path: 'libraries/nfo', element: lazyPage(() => import('../pages/dashboard/Nfo').then((m) => m.Nfo)) },
+  { path: 'tasks', element: lazyPage(() => import('../pages/dashboard/Tasks').then((m) => m.Tasks)) },
+  { path: 'tasks/:id', element: lazyPage(() => import('../pages/dashboard/Tasks').then((m) => m.TaskPage)) },
+  // end #84
   // #85: playback, networking, Live TV.
   { path: 'playback/transcoding', element: playbackPage('Transcoding') },
   { path: 'playback/resume', element: playbackPage('Resume') },

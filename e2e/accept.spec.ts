@@ -1080,3 +1080,300 @@ test('details: collection and playlist, add, reorder, remove, delete', async ({ 
   await page.request.delete(`${SERVER}/Items/${collectionId}`, { headers });
 });
 
+/* ---- dashboard core (#84): home, general, users, libraries, tasks ---- */
+
+/** Opens a dashboard page from the drawer, as an administrator does. */
+async function dashboardPage(page: Page, label: string, url: RegExp) {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('./#/dashboard');
+  await page.getByRole('navigation', { name: 'Dashboard menu' }).getByRole('link', { name: label, exact: true }).click();
+  await expect(page).toHaveURL(url);
+}
+
+test('dashboard home: server, devices, activity, paths', async ({ page }) => {
+  await signIn(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('./#/dashboard');
+  const server = page.getByTestId('dashboard-server');
+  await expect(server).toContainText('Server name');
+  await expect(server).toContainText('12.0.0');
+  // This browser's own session shows under Devices; sign-ins show under Activity.
+  await expect(page.getByTestId('session-card').first()).toBeVisible({ timeout: 15_000 });
+  // Deadfin (v0.3.0-rc.6) writes no activity log entries, so its widget stays empty.
+  if (process.env.HARNESS_PRODUCT !== 'Deadfin')
+    await expect(page.getByTestId('dashboard-activity').locator('li').first()).toBeVisible({ timeout: 15_000 });
+  else await expect(page.getByTestId('dashboard-activity')).toContainText('No activity in the last day.');
+  await expect(page.getByTestId('dashboard-paths')).toContainText('Transcodes');
+  await expect(page.getByRole('button', { name: 'Scan All Libraries' })).toBeEnabled({ timeout: 15_000 });
+  // Restart asks first; Cancel leaves the server running.
+  await page.getByRole('button', { name: 'Restart' }).click();
+  const confirm = page.getByRole('dialog', { name: 'Restart' });
+  await expect(confirm).toContainText('Are you sure you wish to restart the server?');
+  await confirm.getByRole('button', { name: 'Cancel' }).click();
+  await expect(confirm).toBeHidden();
+  await page.screenshot({
+    path: `${EVIDENCE}30-dashboard-home.png`,
+    fullPage: true,
+  });
+});
+
+test('dashboard general: server name saves and reloads', async ({ page }) => {
+  await signIn(page);
+  await dashboardPage(page, 'General', /#\/dashboard\/settings$/);
+  const name = page.getByLabel('Server name');
+  await expect(name).toBeVisible();
+  const before = await name.inputValue();
+  await name.fill('Trench Station');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Settings saved.')).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('Server name')).toHaveValue('Trench Station');
+  await expect(page.getByLabel('Enable Quick Connect on this server')).toBeChecked();
+  await page.screenshot({
+    path: `${EVIDENCE}31-dashboard-general.png`,
+    fullPage: true,
+  });
+  await page.getByLabel('Server name').fill(before);
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Settings saved.')).toBeVisible();
+});
+
+test('dashboard users: add, restrict, edit, parental control, delete', async ({ page }) => {
+  await signIn(page);
+  await dashboardPage(page, 'Users', /#\/dashboard\/users$/);
+  await expect(page.getByTestId('user-card').filter({ hasText: 'abyss' })).toBeVisible();
+
+  // Add User: name, password, one library.
+  await page.getByTestId('add-user').click();
+  await expect(page).toHaveURL(/#\/dashboard\/users\/add$/);
+  await page.getByLabel('Name').fill('pilot84');
+  await page.getByLabel('Password').fill('pilot-pass-84');
+  await page.getByLabel('Enable access to all libraries').uncheck();
+  await page.getByLabel('Movies', { exact: true }).check();
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page).toHaveURL(/#\/dashboard\/users\/[^/]+\/profile$/);
+  await expect(page.getByRole('heading', { name: 'pilot84', level: 1 })).toBeVisible();
+
+  // Access tab keeps the one library.
+  await page.getByRole('tab', { name: 'Access' }).click();
+  await expect(page).toHaveURL(/\/access$/);
+  await expect(page.getByLabel('Enable access to all libraries')).not.toBeChecked();
+  await expect(page.getByLabel('Movies', { exact: true })).toBeChecked();
+  await expect(page.getByLabel('Archive', { exact: true })).not.toBeChecked();
+
+  // Profile: hide from login screens; Save returns to the list.
+  await page.getByRole('tab', { name: 'Profile' }).click();
+  await page.getByLabel('Hide this user from login screens').check();
+  await page.getByLabel('Allow this user to manage collections').check();
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page).toHaveURL(/#\/dashboard\/users$/);
+  await expect(page.getByText('Settings saved.')).toBeVisible();
+
+  // The server has the policy.
+  const { headers } = await sessionApi(page);
+  const users = (await (await page.request.get(`${SERVER}/Users`, { headers })).json()) as {
+    Id: string;
+    Name: string;
+    Policy: {
+      IsHidden: boolean;
+      EnableCollectionManagement: boolean;
+      EnableAllFolders: boolean;
+      BlockUnratedItems: string[];
+    };
+  }[];
+  const pilot = users.find((u) => u.Name === 'pilot84')!;
+  expect(pilot.Policy).toMatchObject({
+    IsHidden: true,
+    EnableCollectionManagement: true,
+    EnableAllFolders: false,
+  });
+
+  // Password: a mismatch is refused in the page.
+  await page.goto(`./#/dashboard/users/${pilot.Id}/password`);
+  await page.getByLabel('New password', { exact: true }).fill('a');
+  await page.getByLabel('New password confirm').fill('b');
+  await page.getByRole('button', { name: 'Save Password' }).click();
+  await expect(page.getByText('Password and password confirmation must match.')).toBeVisible();
+  await page.screenshot({
+    path: `${EVIDENCE}32-dashboard-user.png`,
+    fullPage: true,
+  });
+
+  // Delete from the card menu.
+  await page.goto('./#/dashboard/users');
+  await page.getByRole('button', { name: 'Menu for pilot84' }).click();
+  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  await page.getByRole('dialog', { name: 'Delete pilot84' }).getByRole('button', { name: 'Delete' }).click();
+  await expect(page.getByTestId('user-card').filter({ hasText: 'pilot84' })).toHaveCount(0);
+});
+
+test('dashboard users: parental control blocks unrated items', async ({ page }) => {
+  // The contract sends UnratedItem as strings ("Movie"); Deadfin's
+  // UserPolicy.BlockUnratedItems is []int and answers 400.
+  test.fail(process.env.HARNESS_PRODUCT === 'Deadfin', 'Deadfin UserPolicy.BlockUnratedItems takes integers, not UnratedItem strings');
+  await signIn(page);
+  const { headers } = await sessionApi(page);
+  const made = await page.request.post(`${SERVER}/Users/New`, { headers, data: { Name: 'warden84', Password: 'warden-pass-84' } });
+  expect(made.ok()).toBe(true);
+  const id = ((await made.json()) as { Id: string }).Id;
+  try {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`./#/dashboard/users/${id}/parentalcontrol`);
+    await page.getByLabel('Movies', { exact: true }).check();
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByText('Settings saved.')).toBeVisible();
+    const after = (await (await page.request.get(`${SERVER}/Users/${id}`, { headers })).json()) as {
+      Policy: { BlockUnratedItems: string[] };
+    };
+    expect(after.Policy.BlockUnratedItems).toEqual(['Movie']);
+  } finally {
+    await page.request.delete(`${SERVER}/Users/${id}`, { headers });
+  }
+});
+
+test('dashboard libraries: add with the folder browser, manage, scan, remove', async ({ page }) => {
+  await signIn(page);
+  await dashboardPage(page, 'Libraries', /#\/dashboard\/libraries$/);
+  const cards = page.getByTestId('library-card');
+  await expect(cards.filter({ hasText: 'Archive' })).toBeVisible();
+  await expect(cards.filter({ hasText: 'Shows' })).toContainText('Shows');
+
+  // Add Media Library: content type, name, a folder picked in the browser.
+  await page.getByRole('button', { name: '+ Add Media Library' }).click();
+  const editor = page.getByRole('dialog', { name: 'Add Media Library' });
+  await editor.getByLabel('Content type').selectOption('homevideos');
+  await editor.getByLabel('Display name').fill('Dive Photos');
+  await editor.getByRole('button', { name: 'Add folder' }).click();
+  const picker = page.getByRole('dialog', { name: 'Select Path' });
+  await picker.getByRole('button', { name: '▸ media' }).click();
+  await picker.getByRole('button', { name: '▸ photos' }).click();
+  await expect(picker.getByText('/media/photos')).toBeVisible();
+  await picker.getByRole('button', { name: 'use this folder' }).click();
+  await expect(editor.getByTestId('library-folders')).toContainText('/media/photos');
+  await expect(editor.getByLabel('Display the photos')).toBeChecked();
+  await editor.getByLabel('Enable real time monitoring').uncheck();
+  await page.screenshot({
+    path: `${EVIDENCE}33-dashboard-library-add.png`,
+    fullPage: true,
+  });
+  await editor.getByRole('button', { name: 'OK' }).click();
+  await expect(editor).toBeHidden({ timeout: 15_000 });
+  const card = cards.filter({ hasText: 'Dive Photos' });
+  await expect(card).toContainText('Home Videos and Photos');
+
+  // Manage library: the saved option comes back; change one and save.
+  await card.getByRole('button', { name: 'Manage library Dive Photos' }).click();
+  const manage = page.getByRole('dialog', { name: 'Dive Photos' });
+  await expect(manage.getByLabel('Enable real time monitoring')).not.toBeChecked();
+  await manage.getByLabel('Enable real time monitoring').check();
+  await manage.getByRole('button', { name: 'OK' }).click();
+  await expect(manage).toBeHidden();
+  const { headers } = await sessionApi(page);
+  const folders = (await (await page.request.get(`${SERVER}/Library/VirtualFolders`, { headers })).json()) as {
+    Name: string;
+    Locations: string[];
+    LibraryOptions: { EnableRealtimeMonitor: boolean };
+  }[];
+  const dive = folders.find((f) => f.Name === 'Dive Photos')!;
+  expect(dive.Locations).toEqual(['/media/photos']);
+  expect(dive.LibraryOptions.EnableRealtimeMonitor).toBe(true);
+
+  // Scan library from the card menu.
+  await card.getByRole('button', { name: 'Menu for Dive Photos' }).click();
+  await page.getByRole('menuitem', { name: 'Scan library' }).click();
+  const scan = page.getByRole('dialog', { name: 'Scan library' });
+  await scan.getByRole('button', { name: 'Refresh' }).click();
+  await expect(scan.getByText('Refresh queued.')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(scan).toBeHidden();
+
+  // Remove it again.
+  await card.getByRole('button', { name: 'Menu for Dive Photos' }).click();
+  await page.getByRole('menuitem', { name: 'Remove' }).click();
+  const remove = page.getByRole('dialog', { name: 'Remove Media Folder' });
+  await expect(remove).toContainText('/media/photos');
+  await remove.getByRole('button', { name: 'Delete' }).click();
+  await expect(card).toHaveCount(0, { timeout: 15_000 });
+});
+
+test('dashboard scheduled tasks: categories, run, trigger add and remove', async ({ page }) => {
+  await signIn(page);
+  await dashboardPage(page, 'Scheduled Tasks', /#\/dashboard\/tasks$/);
+  await expect(page.getByRole('heading', { name: 'Library', level: 2 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Maintenance', level: 2 })).toBeVisible();
+  const row = page.getByTestId('task-row').filter({ hasText: 'Clean Activity Log' });
+  await row.getByRole('button', { name: 'Start Clean Activity Log' }).click();
+  // A short task finishes within the poll; its status line then shows the run.
+  await expect(row).toContainText(/Last ran (less than a minute|1 minute) ago/, { timeout: 30_000 });
+  await page.screenshot({
+    path: `${EVIDENCE}34-dashboard-tasks.png`,
+    fullPage: true,
+  });
+
+  await row.getByRole('link').click();
+  await expect(page.getByRole('heading', { name: 'Clean Activity Log', level: 1 })).toBeVisible();
+  const triggers = page.getByTestId('task-triggers').locator('tbody tr');
+  const count = await triggers.count();
+  await page.getByRole('button', { name: '+ Add Trigger' }).click();
+  const add = page.getByRole('dialog', { name: 'Add Trigger' });
+  await add.getByLabel('Trigger type').selectOption('IntervalTrigger');
+  await add.getByLabel('Every').selectOption({ label: '6 hours' });
+  await add.getByRole('button', { name: 'Add' }).click();
+  await expect(triggers).toHaveCount(count + 1);
+  await expect(triggers.last()).toContainText('Every 6 hours');
+  await triggers.last().getByRole('button', { name: 'Remove Every 6 hours' }).click();
+  await page.getByRole('dialog', { name: 'Delete Task Trigger' }).getByRole('button', { name: 'Remove' }).click();
+  await expect(triggers).toHaveCount(count);
+});
+
+test('dashboard NFO settings: save and reload', async ({ page }) => {
+  await signIn(page);
+  const { headers } = await sessionApi(page);
+  const probe = await page.request.get(`${SERVER}/System/Configuration/xbmcmetadata`, { headers });
+  // Deadfin answers 404 until deadfin#741 ships in the image under test.
+  test.skip(probe.status() === 404, 'server has no /System/Configuration/xbmcmetadata (deadfin#741)');
+  await page.goto('./#/dashboard/libraries/nfo');
+  const box = page.getByLabel('Save image paths within NFO files');
+  await expect(box).toBeVisible();
+  const was = await box.isChecked();
+  await box.setChecked(!was);
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Settings saved.')).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('Save image paths within NFO files')).toBeChecked({ checked: !was });
+  await page.getByLabel('Save image paths within NFO files').setChecked(was);
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Settings saved.')).toBeVisible();
+});
+
+test('dashboard: a non-administrator is sent Home', async ({ page }) => {
+  // The browser signs abyss out below, so the API calls use their own token.
+  const auth = 'MediaBrowser Client="Deadfin Accept", Device="pw", DeviceId="pw-admin84", Version="0.1.0"';
+  const login = await page.request.post(`${SERVER}/Users/AuthenticateByName`, {
+    headers: { Authorization: auth },
+    data: { Username: 'abyss', Pw: 'trench-test-1' },
+  });
+  const headers = { Authorization: `${auth}, Token="${((await login.json()) as { AccessToken: string }).AccessToken}"` };
+  // A run that stopped half way leaves the user behind; start clean.
+  const users = (await (await page.request.get(`${SERVER}/Users`, { headers })).json()) as { Id: string; Name: string }[];
+  for (const u of users.filter((x) => x.Name === 'deckhand84')) await page.request.delete(`${SERVER}/Users/${u.Id}`, { headers });
+  const made = await page.request.post(`${SERVER}/Users/New`, { headers, data: { Name: 'deckhand84', Password: 'deck-pass-84' } });
+  expect(made.ok()).toBe(true);
+  const id = ((await made.json()) as { Id: string }).Id;
+  try {
+    await page.goto('./#/login');
+    await expect(page.locator('.login-panel')).toHaveCSS('opacity', '1');
+    await page.getByLabel('Server').fill(SERVER);
+    await page.getByLabel('User').fill('deckhand84');
+    await page.getByLabel('Password').fill('deck-pass-84');
+    await page.getByRole('button', { name: 'Sign In' }).click();
+    await expect(page).toHaveURL(/#\/home$/);
+    await page.getByTestId('user-menu-button').click();
+    await expect(page.getByRole('menuitem', { name: 'Dashboard' })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await page.goto('./#/dashboard/users');
+    await expect(page).toHaveURL(/#\/home$/);
+  } finally {
+    expect((await page.request.delete(`${SERVER}/Users/${id}`, { headers })).ok()).toBe(true);
+  }
+});

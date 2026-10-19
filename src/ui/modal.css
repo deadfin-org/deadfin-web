@@ -1,0 +1,112 @@
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 6vh 16px 16px;
+  background: rgba(2, 5, 9, 0.72);
+  overflow-y: auto;
+}
+
+.modal {
+  width: min(32em, 100%);
+  background: var(--abyss-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-raise);
+  outline: none;
+}
+
+.modal.is-wide {
+  width: min(52em, 100%);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.modal-close {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--steel);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  background: var(--abyss-2);
+  color: var(--bone);
+}
+
+.modal-body {
+  padding: 16px 18px;
+}
+
+.modal-text {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 0 18px 16px;
+}
+
+.modal-body .modal-actions {
+  padding: 8px 0 0;
+}
+
+.button-plain,
+.button-alarm {
+  padding: 8px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--bone);
+  cursor: pointer;
+}
+
+.button-plain:hover:not(:disabled) {
+  border-color: var(--biolum);
+  color: var(--biolum);
+}
+
+.button-alarm {
+  border-color: var(--alarm);
+  color: var(--alarm);
+  font-weight: 600;
+}
+
+.button-alarm:hover:not(:disabled) {
+  background: rgba(255, 107, 94, 0.12);
+}
+
+.button-plain:disabled,
+.button-alarm:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.list-more {
+  display: block;
+  margin: 12px auto;
+}
