@@ -26,8 +26,9 @@ import {
   type StreamRequest,
 } from '../api/tracks';
 import { formatTimecode, secondsToTicks, ticksToSeconds } from '../lib/format';
-import { playUrl } from './Series';
-import { detailsUrl } from '../routes/paths';
+import { playUrl } from '../api/tv';
+import { detailsUrl, trackChoiceFrom } from '../routes/paths';
+import '../ui/ui.css';
 import './player.css';
 
 const PROGRESS_INTERVAL_MS = 5_000;
@@ -45,6 +46,8 @@ function PlayerInner({ itemId }: { itemId: string }) {
   const navigate = useNavigate();
   const [search] = useSearchParams();
   const startTicks = Number(search.get('t') ?? 0) || 0;
+  // The version and tracks chosen on the details page, read once.
+  const [chosen] = useState(() => trackChoiceFrom(search));
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [source, setSource] = useState<{
@@ -64,9 +67,13 @@ function PlayerInner({ itemId }: { itemId: string }) {
   // Track choice. `request` is what the current stream was built with; a
   // choice the browser cannot apply itself changes it and re-negotiates from
   // the current position.
-  const [audio, setAudio] = useState<number | undefined>(undefined);
-  const [subtitle, setSubtitle] = useState<number | null | undefined>(undefined);
-  const [request, setRequest] = useState<StreamRequest>({});
+  const [audio, setAudio] = useState<number | undefined>(chosen.audio);
+  const [subtitle, setSubtitle] = useState<number | null | undefined>(chosen.subtitle);
+  // The details page names an audio track only when it is not the default.
+  const [request, setRequest] = useState<StreamRequest>(
+    chosen.audio !== undefined ? { audioStreamIndex: chosen.audio } : {},
+  );
+  const reconciled = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [vtt, setVtt] = useState<{ url: string; label: string } | null>(null);
   const startRef = useRef(startTicks);
@@ -80,7 +87,7 @@ function PlayerInner({ itemId }: { itemId: string }) {
     getPlaybackInfo(api, itemId, session.userId, {
       ...request,
       startTimeTicks: startRef.current,
-      mediaSourceId: source?.media.Id,
+      mediaSourceId: source?.media.Id ?? chosen.mediaSourceId,
     })
       .then((info) => {
         if (cancelled) return;
@@ -90,6 +97,15 @@ function PlayerInner({ itemId }: { itemId: string }) {
           return;
         }
         const { media, method } = picked;
+        // An image subtitle chosen on the details page is burned in: ask once more for that stream.
+        if (!reconciled.current) {
+          reconciled.current = true;
+          const want = streamRequestFor(media, selRef.current.audio, selRef.current.subtitle ?? null);
+          if (want.burnSubtitleIndex !== undefined && !sameRequest(want, request)) {
+            setRequest(want);
+            return;
+          }
+        }
         if (selRef.current.audio === undefined) setAudio(defaultAudioIndex(media));
         if (selRef.current.subtitle === undefined) {
           const d = defaultSubtitleIndex(media);

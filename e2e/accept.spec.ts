@@ -353,29 +353,34 @@ test('tv: series, seasons, episodes, next up and up next', async ({ page }) => {
   const { headers, userId, episodes } = await resetEpisodes(page);
   await page.reload();
 
-  // Series card → series page: no Play button for the series itself, seasons as tabs.
+  // Series card → series page, as jellyfin-web: Play, Next Up, then the Seasons row.
   await (await openLibrary(page, 'Shows')).getByTestId('item-link').first().click();
-  await expect(page.getByTestId('series')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('item-detail')).toHaveAttribute('data-type', 'Series', { timeout: 15_000 });
   await expect(page.getByRole('heading', { name: 'Trench Tales' })).toBeVisible();
-  await expect(page.getByTestId('action-play')).toHaveCount(0);
-  await expect(page.getByRole('tab')).toHaveCount(2);
-  await expect(page.getByRole('tab', { selected: true })).toHaveText(/Season 1/);
-  const rows = page.getByTestId('episode-row');
-  await expect(rows).toHaveCount(2);
-  await expect(rows.first()).toContainText('S1:E1');
-  await expect(page.getByTestId('series-play-next')).toBeVisible();
+  await expect(page.getByTestId('action-play')).toBeVisible();
+  const seasons = page.getByTestId('seasons');
+  await expect(seasons.getByTestId('item-link')).toHaveCount(2);
   await page.screenshot({ path: `${EVIDENCE}08-series.png`, fullPage: true });
 
-  await page.getByRole('tab', { name: /Specials/ }).click();
+  // A season has its own page with the episode list.
+  await seasons.getByTestId('item-link').filter({ hasText: 'Specials' }).click();
+  const rows = page.getByTestId('episode-row');
   await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText('Special');
-  await page.getByRole('tab', { name: /Season 1/ }).click();
+  await expect(rows.first()).toContainText(/Special - .*Behind the Hull/);
+  await page.goBack();
+  await page.getByTestId('seasons').getByTestId('item-link').filter({ hasText: 'Season 1' }).click();
+  await expect(page.getByTestId('item-detail')).toHaveAttribute('data-type', 'Season');
+  await expect(page.getByTestId('detail-crumbs')).toContainText('Trench Tales');
   await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText(/1\. .*First Dive/);
+  await page.screenshot({ path: `${EVIDENCE}08b-season.png`, fullPage: true });
 
-  // Episode page: breadcrumbs back to the series, and a Play button.
+  // Episode page: series and season links, Play, and More from Season 1.
   await rows.first().getByRole('link', { name: /First Dive/ }).click();
   await expect(page.getByTestId('detail-crumbs')).toContainText('Trench Tales');
+  await expect(page.getByTestId('detail-crumbs').getByRole('link', { name: 'Season 1' })).toBeVisible();
   await expect(page.getByTestId('action-play')).toBeVisible();
+  await expect(page.getByTestId('more-from-season').getByTestId('wide-card')).toHaveCount(2);
 
   // Episode 1 watched (through the API): Next Up on home is episode 2.
   const first = episodes.find((e) => /First Dive/.test(e.Name))!;
@@ -385,10 +390,13 @@ test('tv: series, seasons, episodes, next up and up next', async ({ page }) => {
   await expect(nextUp).toBeVisible({ timeout: 15_000 });
   await expect(nextUp.getByTestId('poster').first()).toContainText('S1:E2');
 
-  // From the series, play episode 1 to its end: the next episode is offered.
+  // The series' Next Up and its Play button follow.
   await (await openLibrary(page, 'Shows')).getByTestId('item-link').first().click();
-  await expect(page.getByTestId('series-play-next')).toContainText('S1:E2');
-  await page.getByRole('button', { name: /^Play S1:E1/ }).click();
+  await expect(page.getByTestId('next-up')).toContainText('S1:E2');
+
+  // From the season, play episode 1 to its end: the next episode is offered.
+  await page.getByTestId('seasons').getByTestId('item-link').filter({ hasText: 'Season 1' }).click();
+  await page.getByRole('button', { name: /^Play 1\. .*First Dive/ }).click();
   const video = page.getByTestId('player-video');
   await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.duration || 0), { timeout: 15_000 }).toBeGreaterThan(5);
   await video.evaluate((v: HTMLVideoElement) => {
@@ -409,6 +417,7 @@ test('tv: marking an episode played sticks', async ({ page }) => {
   await resetEpisodes(page);
   await page.reload();
   await (await openLibrary(page, 'Shows')).getByTestId('item-link').first().click();
+  await page.getByTestId('seasons').getByTestId('item-link').filter({ hasText: 'Season 1' }).click();
   await page.getByTestId('episode-row').first().getByRole('link', { name: /First Dive/ }).click();
   await page.getByTestId('toggle-played').click();
   await expect(page.getByTestId('toggle-played')).toHaveClass(/is-on/);
@@ -920,3 +929,154 @@ test('dashboard: logs list and file view', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Watch' }).first()).toBeVisible();
   await page.screenshot({ path: `${EVIDENCE}25-dashboard-log-file.png` });
 });
+
+/** Opens a movie's details page from its library page. */
+async function openMovie(page: Page, library: string, title: string) {
+  await (await openLibrary(page, library)).getByTestId('item-link').filter({ hasText: title }).click();
+  await expect(page.getByTestId('item-detail')).toHaveAttribute('data-type', 'Movie', { timeout: 15_000 });
+  return page.url().split('/details?id=')[1]!.split('&')[0]!;
+}
+
+test('details: header, overview, people, person page, More menu', async ({ page }) => {
+  await signIn(page);
+  await openMovie(page, 'Movies', 'Pressure Hull');
+
+  // Header: title, year and runtime in the info line; Ends at for a video.
+  await expect(page.getByRole('heading', { level: 1, name: 'Pressure Hull' })).toBeVisible();
+  const meta = page.getByTestId('detail-meta');
+  await expect(meta).toContainText('2024');
+  await expect(meta).toContainText(/Ends at/);
+  const actions = page.getByRole('group', { name: 'Actions' });
+  await expect(actions.getByRole('button', { name: /^(Play|Resume)$/ }).first()).toBeVisible();
+  for (const name of ['Mark played', 'Add to favorites', 'More']) {
+    await expect(actions.getByRole('button', { name, exact: true })).toBeVisible();
+  }
+
+  // Version, video and audio selects for a video.
+  await expect(page.getByTestId('track-selections').getByLabel('Audio')).toBeVisible();
+
+  // The NFO's tagline, overview, director, studio, genre and cast (seeded by the harness).
+  if (await page.getByTestId('cast').count()) {
+    await expect(page.getByTestId('detail-overview')).toContainText('cracked hull');
+    const group = page.getByTestId('detail-group');
+    await expect(group).toContainText('Director');
+    await expect(group).toContainText('Ada Marsh');
+    await expect(page.getByTestId('cast').getByTestId('person-card').first()).toContainText('Ivo Trench');
+    await page.screenshot({ path: `${EVIDENCE}11-details.png`, fullPage: true });
+
+    // A cast card opens the person's page with their movies.
+    await page.getByTestId('cast').getByTestId('person-card').filter({ hasText: 'Ivo Trench' }).click();
+    await expect(page.getByTestId('item-detail')).toHaveAttribute('data-type', 'Person', { timeout: 15_000 });
+    await expect(page.getByRole('heading', { level: 1, name: 'Ivo Trench' })).toBeVisible();
+    await expect(page.getByTestId('person-Movie').getByTestId('item-link')).toContainText(['Pressure Hull']);
+    await page.goBack();
+  } else {
+    test.info().annotations.push({ type: 'finding', description: 'NFO people not read: no Cast & Crew section' });
+  }
+
+  // More (…): the admin sees jellyfin-web's entries, in its order.
+  await page.getByTestId('action-more').click();
+  const menu = page.getByTestId('more-menu');
+  for (const name of ['Add to collection', 'Add to playlist', 'Media Info', 'Refresh metadata']) {
+    await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();
+  }
+  await page.screenshot({ path: `${EVIDENCE}12-more-menu.png` });
+
+  // Media Info lists the container and the streams; Escape closes it.
+  await menu.getByRole('menuitem', { name: 'Media Info' }).click();
+  const info = page.getByTestId('media-info-dialog');
+  await expect(info).toContainText('Container');
+  await expect(info).toContainText('Video');
+  await page.keyboard.press('Escape');
+  await expect(info).toHaveCount(0);
+
+  // Refresh metadata opens jellyfin-web's dialog; Back closes it without a refresh.
+  await page.getByTestId('action-more').click();
+  await page.getByTestId('more-menu').getByRole('menuitem', { name: 'Refresh metadata' }).click();
+  const refresh = page.getByTestId('refresh-dialog');
+  await expect(refresh.getByLabel('Refresh mode')).toHaveValue('scan');
+  await refresh.getByRole('button', { name: 'Back' }).click();
+  await expect(refresh).toHaveCount(0);
+});
+
+test('details: the audio track chosen on the page carries into the player', async ({ page }) => {
+  await signIn(page);
+  await openMovie(page, 'Other formats', 'Twin Echo');
+  const audio = page.getByTestId('track-selections').getByLabel('Audio');
+  await expect(audio.locator('option')).toHaveCount(2);
+  // The server remembers the last audio choice as the default: pick the other track.
+  const current = await audio.inputValue();
+  const values = await audio.locator('option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
+  const french = values.find((v) => v !== current)!;
+  await audio.selectOption(french);
+  const info = page.waitForRequest((r) => /\/PlaybackInfo/.test(r.url()) && r.method() === 'POST');
+  await page.getByTestId('action-play').or(page.getByTestId('action-resume')).first().click();
+  await expect(page).toHaveURL(new RegExp(`/video\\?id=.*audio=${french}`));
+  expect((await info).postDataJSON().AudioStreamIndex).toBe(Number(french));
+});
+
+test('details: collection and playlist, add, reorder, remove, delete', async ({ page }) => {
+  await signIn(page);
+  const { headers } = await sessionApi(page);
+  const voyage = await openMovie(page, 'Movies', 'Voyage to the Trench');
+
+  // Add to collection → New… → the new collection's page lists the movie.
+  await page.getByTestId('action-more').click();
+  await page.getByTestId('more-menu').getByRole('menuitem', { name: 'Add to collection' }).click();
+  const coll = page.getByTestId('collection-dialog');
+  await coll.getByLabel('Name').fill('Deep Set');
+  await coll.getByRole('button', { name: 'OK' }).click();
+  await expect(page.getByTestId('item-detail')).toHaveAttribute('data-type', 'BoxSet', { timeout: 15_000 });
+  const collectionId = page.url().split('/details?id=')[1]!.split('&')[0]!;
+  // The server links the items just after it answers; reload until it has.
+  await expect(async () => {
+    await page.reload();
+    await expect(page.getByTestId('collection-items')).toContainText('Movies', { timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+  await expect(page.getByTestId('collection-items').getByTestId('item-link')).toContainText(['Voyage to the Trench']);
+  await expect(page.getByTestId('action-play')).toBeVisible();
+  await page.screenshot({ path: `${EVIDENCE}13-collection.png`, fullPage: true });
+
+  // Add to playlist → New… → the playlist page; a second item comes in through the API.
+  await page.goto(`./#/details?id=${voyage}`);
+  await page.getByTestId('action-more').click();
+  await page.getByTestId('more-menu').getByRole('menuitem', { name: 'Add to playlist' }).click();
+  const pl = page.getByTestId('playlist-dialog');
+  await pl.getByLabel('Name').fill('Dive Queue');
+  await pl.getByRole('button', { name: 'Add' }).click();
+  await expect(page.getByTestId('item-detail')).toHaveAttribute('data-type', 'Playlist', { timeout: 15_000 });
+  const playlistId = page.url().split('/details?id=')[1]!.split('&')[0]!;
+  const rows = page.getByTestId('playlist-items').getByTestId('episode-row');
+  await expect(rows).toHaveCount(1);
+  const pressure = (await (
+    await page.request.get(`${SERVER}/Items?recursive=true&includeItemTypes=Movie&searchTerm=Pressure`, { headers })
+  ).json()) as { Items: { Id: string }[] };
+  await page.request.post(`${SERVER}/Playlists/${playlistId}/Items?ids=${pressure.Items[0]!.Id}`, { headers });
+  await page.reload();
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText('Voyage to the Trench');
+
+  // Reorder with the keyboard on the drag handle; the server keeps the order.
+  await rows.nth(0).getByRole('button', { name: /^Move Voyage/ }).press('ArrowDown');
+  await expect(rows.nth(0)).toContainText('Pressure Hull', { timeout: 10_000 });
+  await page.reload();
+  await expect(rows.nth(1)).toContainText('Voyage to the Trench');
+  await page.screenshot({ path: `${EVIDENCE}14-playlist.png`, fullPage: true });
+
+  // Remove from playlist.
+  await rows.nth(0).getByTestId('playlist-remove').click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText('Voyage to the Trench');
+
+  // Delete the playlist from its More menu, after the confirmation.
+  await page.getByTestId('action-more').click();
+  await page.getByTestId('more-menu').getByRole('menuitem', { name: 'Delete' }).click();
+  const del = page.getByTestId('delete-dialog');
+  await expect(del).toContainText('Are you sure you wish to delete this playlist?');
+  await del.getByRole('button', { name: 'Delete' }).click();
+  await expect(page).toHaveURL(/#\/home$/, { timeout: 15_000 });
+  await expect.poll(async () => (await page.request.get(`${SERVER}/Items/${playlistId}`, { headers })).status()).toBe(404);
+
+  await page.request.delete(`${SERVER}/Items/${collectionId}`, { headers });
+});
+

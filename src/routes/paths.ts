@@ -11,17 +11,28 @@ export const paths = {
   login: '/login',
 } as const;
 
-/** Item detail page; a season opens on its series with that season selected. */
+/** Item detail page. `season` is the old series-with-season form; it opens that season's page. */
 export function detailsUrl(id: string, opts: { season?: string | null } = {}): string {
   const q = new URLSearchParams({ id });
   if (opts.season) q.set('season', opts.season);
   return `/details?${q.toString()}`;
 }
 
+/** Track choice from the details page; it carries into the player. */
+export interface TrackChoice {
+  mediaSourceId?: string | null;
+  audio?: number | null;
+  /** A subtitle stream index, or -1 for Off. */
+  subtitle?: number | null;
+}
+
 /** Video player; `startTicks` resumes at that position. */
-export function videoUrl(id: string, startTicks?: number | null): string {
+export function videoUrl(id: string, startTicks?: number | null, tracks: TrackChoice = {}): string {
   const q = new URLSearchParams({ id });
   if (startTicks && startTicks > 0) q.set('t', String(startTicks));
+  if (tracks.mediaSourceId) q.set('source', tracks.mediaSourceId);
+  if (typeof tracks.audio === 'number') q.set('audio', String(tracks.audio));
+  if (typeof tracks.subtitle === 'number') q.set('sub', String(tracks.subtitle));
   return `/video?${q.toString()}`;
 }
 
@@ -96,6 +107,20 @@ export function itemUrl(item: LinkItem, opts: { parentId?: string | null } = {})
   }
   if (item.IsFolder && !DETAIL_FOLDERS.has(item.Type ?? '')) return listUrl({ parentId: id });
   return detailsUrl(id);
+}
+
+/** The track choice a player URL carries; `subtitle` null is Off, undefined is the default. */
+export function trackChoiceFrom(q: URLSearchParams): { mediaSourceId?: string; audio?: number; subtitle?: number | null } {
+  const num = (k: string) => {
+    const v = q.get(k);
+    return v !== null && v !== '' && Number.isInteger(Number(v)) ? Number(v) : undefined;
+  };
+  const sub = num('sub');
+  return {
+    mediaSourceId: q.get('source') || undefined,
+    audio: num('audio'),
+    subtitle: sub === undefined ? undefined : sub < 0 ? null : sub,
+  };
 }
 
 /** Old deadfin-web paths and their jellyfin-web form; `null` when the path is not an old one. */

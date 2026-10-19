@@ -1,5 +1,6 @@
 import type { Api } from './client';
 import type { BaseItem } from './library';
+import { videoUrl } from '../routes/paths';
 
 const CARD = {
   enableUserData: true,
@@ -79,4 +80,14 @@ export function pickSeason(seasons: BaseItem[], requested?: string | null): Base
   return (
     regular.find((s) => (s.UserData?.UnplayedItemCount ?? 1) > 0) ?? regular[0] ?? seasons[0]
   );
+}
+
+/** The "Play" target for a series: its Next Up, else the first unplayed episode, else the first. */
+export function playNextTarget(nextUp: BaseItem | undefined, episodes: BaseItem[]): BaseItem | undefined {
+  return nextUp ?? episodes.find((e) => !e.UserData?.Played) ?? episodes[0];
+}
+
+/** Play URL for an episode or video, resuming where it was left. */
+export function playUrl(item: BaseItem): string {
+  return videoUrl(item.Id ?? '', item.UserData?.Played ? 0 : item.UserData?.PlaybackPositionTicks);
 }

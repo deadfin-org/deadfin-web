@@ -82,6 +82,22 @@ log 'generating synthetic media (ffmpeg from the pinned jellyfin image)'
 gen_movie 'Voyage to the Trench (2021)'    'testsrc2=size=400x600'
 gen_movie 'The Bioluminescent Zone (2019)' 'smptehdbars=size=400x600'
 gen_movie 'Pressure Hull (2024)'           'mandelbrot=size=400x600'
+# Local metadata for the details page: overview, tagline, genre, studio,
+# director and cast, read from the NFO (no internet providers).
+cat > '.state/media/movies/Pressure Hull (2024)/Pressure Hull (2024).nfo' <<'NFO'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<movie>
+  <title>Pressure Hull</title>
+  <year>2024</year>
+  <plot>A deep-sea crew keeps a cracked hull together for one more dive.</plot>
+  <tagline>Hold the depth.</tagline>
+  <genre>Thriller</genre>
+  <studio>Abyssal Pictures</studio>
+  <director>Ada Marsh</director>
+  <actor><name>Ivo Trench</name><role>Captain</role><type>Actor</type></actor>
+  <actor><name>Mira Deep</name><role>Engineer</role><type>Actor</type></actor>
+</movie>
+NFO
 
 # A 40-title library for paging past the home shelf and the first page of
 # the library grid: one 1 s stub generated once, copied on the host.

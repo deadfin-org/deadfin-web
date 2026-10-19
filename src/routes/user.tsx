@@ -1,6 +1,5 @@
 import { lazy, Suspense, type ReactElement } from 'react';
 import { Home } from '../pages/Home';
-import { ItemDetail } from '../pages/ItemDetail';
 import { LIBRARY_PATHS } from './paths';
 import { QuickConnect } from '../pages/QuickConnect';
 
@@ -20,6 +19,15 @@ if (typeof window !== 'undefined') {
 
 const page = (el: ReactElement) => <Suspense fallback={null}>{el}</Suspense>;
 
+// The details page loads as its own chunk, fetched when the browser is
+// idle, so the first load stays small and opening an item does not wait.
+const loadDetails = () => import('../pages/details/ItemDetail');
+const ItemDetail = lazy(() => loadDetails().then((m) => ({ default: m.ItemDetail })));
+if (typeof window !== 'undefined') {
+  const idle = window.requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 200));
+  idle(() => void loadDetails());
+}
+
 /**
  * Signed-in pages inside the app bar and main drawer. Add one line per page.
  * The player (`/video`) has no app bar and lives in src/App.tsx.
@@ -30,7 +38,7 @@ export const userRoutes: { path: string; element: ReactElement }[] = [
   ...Object.values(LIBRARY_PATHS).map((path) => ({ path, element: page(<LibraryPage />) })),
   { path: '/list', element: page(<ListPage />) },
   { path: '/library/:viewId', element: page(<LegacyLibraryRedirect />) },
-  { path: '/details', element: <ItemDetail /> },
+  { path: '/details', element: page(<ItemDetail />) },
   { path: '/search', element: page(<Search />) },
   { path: '/quickconnect', element: <QuickConnect /> },
 ];

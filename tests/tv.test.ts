@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { episodeLabel, pickSeason } from '../src/api/tv';
-import { playNextTarget, playUrl } from '../src/pages/Series';
+import { episodeLabel, pickSeason, playNextTarget, playUrl } from '../src/api/tv';
 import type { BaseItem } from '../src/api/library';
 
 const item = (o: object) => o as BaseItem;
