@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ComponentType, type ReactElement } from 'react';
 import { DashboardHome } from '../pages/dashboard/DashboardHome';
+import { lazyPage } from './lazyPage';
 
 type PlaybackPages = typeof import('../pages/dashboard/playbackPages');
 
@@ -28,4 +29,10 @@ export const dashboardRoutes: { path: string; element: ReactElement }[] = [
   { path: 'livetv', element: playbackPage('LiveTv') },
   { path: 'livetv/tuner', element: playbackPage('TunerEdit') },
   { path: 'livetv/guide', element: playbackPage('GuideProvider') },
+  // #86: Devices, Activity, API Keys, Logs.
+  { path: 'devices', element: lazyPage(() => import('../pages/dashboard/Devices').then((m) => m.Devices)) },
+  { path: 'activity', element: lazyPage(() => import('../pages/dashboard/Activity').then((m) => m.Activity)) },
+  { path: 'keys', element: lazyPage(() => import('../pages/dashboard/ApiKeys').then((m) => m.ApiKeys)) },
+  { path: 'logs', element: lazyPage(() => import('../pages/dashboard/Logs').then((m) => m.Logs)) },
+  { path: 'logs/:file', element: lazyPage(() => import('../pages/dashboard/LogFile').then((m) => m.LogFile)) },
 ];

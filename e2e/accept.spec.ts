@@ -752,3 +752,171 @@ test('dashboard live tv: add, edit and delete an M3U tuner and an XMLTV provider
   await card.getByRole('group').getByRole('button', { name: 'Delete' }).click();
   await expect(card).toHaveCount(0);
 });
+
+/** The signed-in page's token, for server-side checks. */
+async function sessionToken(page: Page): Promise<string> {
+  const s = JSON.parse((await page.evaluate(() => localStorage.getItem('deadfin.session.v1')))!) as { accessToken: string };
+  return s.accessToken;
+}
+
+const authHeader = (token?: string, device = 'pw', deviceId = 'pw') =>
+  `MediaBrowser Client="Deadfin Accept", Device="${device}", DeviceId="${deviceId}", Version="0.1.0"${token ? `, Token="${token}"` : ''}`;
+
+/**
+ * Deadfin before deadfin#741 answers 404 for /Devices and /System/Logs; on
+ * that image the test is an expected failure, not a client defect.
+ */
+async function expectFailWithoutRoute(page: Page, route: string) {
+  if (process.env.HARNESS_PRODUCT !== 'Deadfin') return;
+  const res = await page.request.get(`${SERVER}${route}`, { headers: { Authorization: authHeader(await sessionToken(page)) } });
+  test.fail(res.status() === 404, `Deadfin image without ${route} (deadfin#741)`);
+}
+
+test('dashboard: API keys are created and revoked', async ({ page }) => {
+  await signIn(page);
+  await page.goto('./#/dashboard');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.getByRole('navigation', { name: 'Dashboard menu' }).getByRole('link', { name: 'API Keys' }).click();
+  await expect(page).toHaveURL(/#\/dashboard\/keys$/);
+  await expect(page.getByRole('heading', { name: 'API Keys', level: 1 })).toBeVisible();
+  await expect(page.getByTestId('api-keys-table')).toBeVisible();
+
+  await page.getByRole('button', { name: 'New API Key' }).click();
+  await page.getByLabel('App name').fill('accept-throwaway');
+  await page.getByRole('button', { name: 'Create' }).click();
+  const row = page.getByTestId('api-key-row').filter({ hasText: 'accept-throwaway' });
+  await expect(row).toHaveCount(1, { timeout: 10_000 });
+  const key = (await row.locator('td').first().textContent())!.trim();
+  expect(key).toMatch(/^\S{16,}$/);
+  const probe = () =>
+    page.request.get(`${SERVER}/System/Info`, { headers: { Authorization: authHeader(key) } }).then((r) => r.status());
+  expect(await probe()).toBe(200);
+  await page.screenshot({ path: `${EVIDENCE}21-dashboard-keys.png`, fullPage: true });
+
+  await row.getByRole('button', { name: /Revoke/ }).click();
+  await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Delete' }).click();
+  await expect(row).toHaveCount(0, { timeout: 10_000 });
+  await expect.poll(probe).toBe(401);
+});
+
+test('dashboard: devices are listed, renamed and deleted', async ({ page }) => {
+  await signIn(page);
+  await expectFailWithoutRoute(page, '/Devices');
+
+  // A throwaway device: its own sign-in, so deleting it ends only that token.
+  const login = await page.request.post(`${SERVER}/Users/AuthenticateByName`, {
+    headers: { Authorization: authHeader(undefined, 'Throwaway', 'accept-throwaway-device'), 'Content-Type': 'application/json' },
+    data: { Username: 'abyss', Pw: 'trench-test-1' },
+  });
+  expect(login.status()).toBe(200);
+  const throwawayToken = ((await login.json()) as { AccessToken: string }).AccessToken;
+
+  await page.goto('./#/dashboard');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.getByRole('navigation', { name: 'Dashboard menu' }).getByRole('link', { name: 'Devices' }).click();
+  await expect(page).toHaveURL(/#\/dashboard\/devices$/);
+  await expect(page.getByRole('heading', { name: 'Devices', level: 1 })).toBeVisible();
+
+  // The browser in use cannot be deleted from here.
+  const rows = page.getByTestId('device-row');
+  await expect(rows.first()).toBeVisible({ timeout: 10_000 });
+  const own = rows.filter({ hasText: 'Deadfin Web' }).filter({ has: page.locator('button[aria-label^="Delete"]:disabled') });
+  await expect(own).toHaveCount(1);
+
+  const throwaway = rows.filter({ hasText: 'Throwaway' });
+  await expect(throwaway).toHaveCount(1);
+  await throwaway.getByRole('button', { name: /^Edit/ }).click();
+  await page.getByLabel('Device', { exact: true }).fill('Throwaway renamed');
+  await page.keyboard.press('Enter');
+  await expect(rows.filter({ hasText: 'Throwaway renamed' })).toHaveCount(1, { timeout: 10_000 });
+  await page.reload();
+  const renamed = rows.filter({ hasText: 'Throwaway renamed' });
+  await expect(renamed).toHaveCount(1, { timeout: 10_000 });
+  await page.screenshot({ path: `${EVIDENCE}22-dashboard-devices.png`, fullPage: true });
+
+  await renamed.getByRole('button', { name: /^Delete/ }).click();
+  await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Delete' }).click();
+  await expect(renamed).toHaveCount(0, { timeout: 10_000 });
+  await expect
+    .poll(() =>
+      page.request
+        .get(`${SERVER}/Users/Me`, { headers: { Authorization: authHeader(throwawayToken, 'Throwaway', 'accept-throwaway-device') } })
+        .then((r) => r.status()),
+    )
+    .toBe(401);
+});
+
+test('dashboard: activity streams, with the user and system filter', async ({ page }) => {
+  await signIn(page);
+  await page.goto('./#/dashboard');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.getByRole('navigation', { name: 'Dashboard menu' }).getByRole('link', { name: 'Activity' }).click();
+  await expect(page).toHaveURL(/#\/dashboard\/activity$/);
+  await expect(page.getByRole('heading', { name: 'Activity', level: 1 })).toBeVisible();
+  await expect(page.getByTestId('activity-row').first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole('columnheader', { name: 'User' })).toBeVisible();
+  await page.screenshot({ path: `${EVIDENCE}23-dashboard-activity.png`, fullPage: true });
+
+  await page.getByRole('button', { name: 'System', exact: true }).click();
+  await expect(page).toHaveURL(/useractivity=false/);
+  await expect(page.getByRole('columnheader', { name: 'User' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'User', exact: true }).click();
+  await expect(page).toHaveURL(/useractivity=true/);
+  await expect(page.getByTestId('activity-row').first()).toBeVisible({ timeout: 10_000 });
+});
+
+test('dashboard: activity streams 5,000 entries as it scrolls', async ({ page }) => {
+  // Synthetic answers time the client alone, as the 40,000-item list.
+  const TOTAL = 5_000;
+  const asked: number[] = [];
+  await page.route(
+    (url) => url.pathname.endsWith('/System/ActivityLog/Entries'),
+    (route) => {
+      const q = new URL(route.request().url()).searchParams;
+      const start = Number(q.get('startIndex') ?? 0);
+      const limit = Number(q.get('limit') ?? 50);
+      asked.push(limit);
+      const Items = Array.from({ length: Math.min(limit, TOTAL - start) }, (_, i) => ({
+        Id: TOTAL - start - i,
+        Name: `Entry ${start + i}`,
+        Type: 'SessionStarted',
+        Severity: 'Information',
+        Date: new Date(Date.UTC(2026, 9, 19) - (start + i) * 60_000).toISOString(),
+      }));
+      return route.fulfill({ json: { Items, TotalRecordCount: TOTAL, StartIndex: start } });
+    },
+  );
+  await signIn(page);
+  const started = Date.now();
+  await page.goto('./#/dashboard/activity');
+  await expect(page.getByTestId('activity-count')).toHaveText('5000 entries');
+  await expect(page.getByTestId('activity-row').first()).toBeVisible({ timeout: 1_000 });
+  expect(Date.now() - started, 'first rows').toBeLessThan(2_000);
+  expect(asked.every((n) => n <= 50), 'pages, not the whole log').toBe(true);
+
+  const before = await page.getByTestId('activity-row').count();
+  await page.mouse.wheel(0, 20_000);
+  await expect.poll(() => page.getByTestId('activity-row').count(), { timeout: 3_000 }).toBeGreaterThan(before);
+});
+
+test('dashboard: logs list and file view', async ({ page }) => {
+  await signIn(page);
+  await expectFailWithoutRoute(page, '/System/Logs');
+  await page.goto('./#/dashboard');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.getByRole('navigation', { name: 'Dashboard menu' }).getByRole('link', { name: 'Logs' }).click();
+  await expect(page).toHaveURL(/#\/dashboard\/logs$/);
+  await expect(page.getByRole('heading', { name: 'Logs', level: 1 })).toBeVisible();
+  await expect(page.getByLabel('Log a warning message if the server was slow to answer')).toBeVisible();
+
+  const first = page.getByTestId('log-list').getByRole('link').first();
+  await expect(first).toBeVisible({ timeout: 10_000 });
+  const name = (await first.locator('.log-name').textContent())!.trim();
+  await page.screenshot({ path: `${EVIDENCE}24-dashboard-logs.png`, fullPage: true });
+  await first.click();
+  await expect(page).toHaveURL(new RegExp(`#/dashboard/logs/${name.replace(/\./g, '\\.')}$`));
+  await expect(page.getByRole('heading', { name, level: 1 })).toBeVisible();
+  await expect(page.getByTestId('log-text')).not.toBeEmpty({ timeout: 10_000 });
+  await expect(page.getByRole('button', { name: 'Watch' }).first()).toBeVisible();
+  await page.screenshot({ path: `${EVIDENCE}25-dashboard-log-file.png` });
+});

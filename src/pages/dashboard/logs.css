@@ -1,0 +1,79 @@
+.log-list {
+  max-width: 54em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--abyss-1);
+}
+
+.log-list li + li {
+  border-top: 1px solid var(--hairline);
+}
+
+.log-link {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 16px;
+  color: var(--bone);
+  text-decoration: none;
+}
+
+.log-link:hover {
+  background: var(--abyss-2);
+}
+
+.log-name {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.log-date {
+  color: var(--steel);
+  font-size: 14px;
+}
+
+.log-file-title {
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+
+.log-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.log-text {
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--abyss-1);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.log-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.log-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 10px 18px;
+  border-radius: var(--r-sm);
+  background: var(--abyss-2);
+  box-shadow: var(--shadow-raise);
+}
