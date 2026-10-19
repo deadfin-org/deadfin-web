@@ -1,6 +1,17 @@
-import type { ReactElement } from 'react';
+import { lazy, Suspense, type ComponentType, type ReactElement } from 'react';
 import { DashboardHome } from '../pages/dashboard/DashboardHome';
-import { LiveTvGroups } from '../pages/LiveTvGroups';
+
+type PlaybackPages = typeof import('../pages/dashboard/playbackPages');
+
+/** A #85 page from the lazy playback/networking/Live TV chunk. */
+function playbackPage(name: keyof PlaybackPages): ReactElement {
+  const Page = lazy(() => import('../pages/dashboard/playbackPages').then((m) => ({ default: m[name] as ComponentType })));
+  return (
+    <Suspense fallback={<p className="readout">Loading…</p>}>
+      <Page />
+    </Suspense>
+  );
+}
 
 /**
  * Dashboard routes, relative to `/dashboard`. Add one line per page; the
@@ -8,5 +19,13 @@ import { LiveTvGroups } from '../pages/LiveTvGroups';
  */
 export const dashboardRoutes: { path: string; element: ReactElement }[] = [
   { path: '', element: <DashboardHome /> },
-  { path: 'livetv', element: <LiveTvGroups /> },
+  // #85: playback, networking, Live TV.
+  { path: 'playback/transcoding', element: playbackPage('Transcoding') },
+  { path: 'playback/resume', element: playbackPage('Resume') },
+  { path: 'playback/streaming', element: playbackPage('Streaming') },
+  { path: 'playback/trickplay', element: playbackPage('Trickplay') },
+  { path: 'networking', element: playbackPage('Networking') },
+  { path: 'livetv', element: playbackPage('LiveTv') },
+  { path: 'livetv/tuner', element: playbackPage('TunerEdit') },
+  { path: 'livetv/guide', element: playbackPage('GuideProvider') },
 ];

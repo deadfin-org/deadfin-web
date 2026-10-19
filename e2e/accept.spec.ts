@@ -580,3 +580,111 @@ test('streamed list: 40,000 items show at once, thumbnails within 1 s', async ({
   await page.mouse.wheel(0, 20_000);
   await expect.poll(() => page.getByTestId('poster').count(), { timeout: 3_000 }).toBeGreaterThan(before);
 });
+
+test('dashboard playback and networking pages load and save like jellyfin-web', async ({ page }) => {
+  await signIn(page);
+  await page.goto('./#/dashboard');
+  const dash = page.getByRole('navigation', { name: 'Dashboard menu' });
+  await page.setViewportSize({ width: 1280, height: 800 });
+
+  // Transcoding: jellyfin-web's fields; the decoder list follows the acceleration type.
+  await dash.getByRole('link', { name: 'Transcoding' }).click();
+  await expect(page).toHaveURL(/#\/dashboard\/playback\/transcoding$/);
+  const hwa = page.getByLabel('Hardware acceleration');
+  await expect(hwa).toHaveValue('none');
+  await expect(page.getByTestId('hw-decoding')).toHaveCount(0);
+  await hwa.selectOption('vaapi');
+  await expect(page.getByTestId('hw-decoding').getByLabel('HEVC', { exact: true })).toBeVisible();
+  await hwa.selectOption('none');
+  await expect(page.getByLabel('Transcoding thread count')).toBeVisible();
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Settings saved.')).toBeVisible();
+
+  // Resume: a save reaches the server and survives a reload; then restore it.
+  await dash.getByRole('link', { name: 'Resume' }).click();
+  const maxPct = page.getByLabel('Maximum resume percentage');
+  const before = await maxPct.inputValue();
+  await maxPct.fill('91');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Settings saved.')).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('Maximum resume percentage')).toHaveValue('91');
+  await page.getByLabel('Maximum resume percentage').fill(before);
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Settings saved.')).toBeVisible();
+
+  await dash.getByRole('link', { name: 'Streaming' }).click();
+  await expect(page.getByLabel('Internet streaming bitrate limit (Mbps)')).toBeVisible();
+  await dash.getByRole('link', { name: 'Trickplay' }).click();
+  await expect(page.getByLabel('Width Resolutions')).not.toHaveValue('');
+
+  // Networking: read only here; a save could move the harness server's port.
+  await dash.getByRole('link', { name: 'Networking' }).click();
+  await expect(page.getByLabel('Local HTTP port number')).toHaveValue('8096');
+  await expect(page.getByRole('heading', { name: 'Remote Access Settings' })).toBeVisible();
+  await page.screenshot({ path: `${EVIDENCE}21-dashboard-networking.png`, fullPage: true });
+});
+
+test('dashboard live tv: add, edit and delete an M3U tuner and an XMLTV provider', async ({ page }) => {
+  test.setTimeout(120_000);
+  const deadfin = process.env.HARNESS_PRODUCT === 'Deadfin';
+  await signIn(page);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('./#/dashboard/livetv');
+  const noLiveTv = page.getByText('This server has no Live TV settings.');
+  await expect(page.getByRole('heading', { name: 'Tuner Devices' }).or(noLiveTv)).toBeVisible();
+  // Live TV is on Deadfin's v0.4 line; a v0.3 image answers 404 for `livetv`.
+  test.skip(deadfin && (await noLiveTv.isVisible()), 'this Deadfin image has no Live TV');
+
+  // Add Tuner Device → M3U from a playlist file.
+  await page.getByRole('link', { name: '+ Add Tuner Device' }).click();
+  await expect(page).toHaveURL(/#\/dashboard\/livetv\/tuner$/);
+  const form = page.getByTestId('tuner-form');
+  await form.getByLabel('Tuner type').selectOption('m3u');
+  await form.getByLabel('Friendly name').fill('Harness M3U');
+  await form.getByLabel('File or URL').fill('/media/livetv/harness.m3u');
+  await form.getByRole('button', { name: 'Save' }).click();
+  await expect(page).toHaveURL(/#\/dashboard\/livetv$/, { timeout: 30_000 });
+  const card = page.getByTestId('tuner-card').filter({ hasText: 'Harness M3U' });
+  await expect(card).toHaveCount(1);
+  await expect(card).toContainText('/media/livetv/harness.m3u');
+
+  // Edit: the stored values come back; Deadfin adds its own fields and the group filter.
+  await card.getByRole('link', { name: 'Edit' }).click();
+  await expect(page).toHaveURL(/#\/dashboard\/livetv\/tuner\?id=/);
+  await expect(form.getByLabel('File or URL')).toHaveValue('/media/livetv/harness.m3u');
+  await expect(form.getByLabel('Tuner type')).toBeDisabled();
+  if (deadfin) {
+    await expect(form.getByLabel('Skip VOD entries')).toBeVisible();
+    await expect(page.getByTestId('tuner-groups')).toBeVisible();
+  } else {
+    await expect(form.getByLabel('Skip VOD entries')).toHaveCount(0);
+  }
+  await form.getByLabel('Simultaneous stream limit').fill('2');
+  await form.getByRole('button', { name: 'Save' }).click();
+  await expect(page).toHaveURL(/#\/dashboard\/livetv$/, { timeout: 30_000 });
+
+  // Add Provider → XMLTV for that tuner, then Map Channels lists its channels.
+  await page.getByRole('button', { name: '+ Add Provider' }).click();
+  await page.getByRole('menuitem', { name: 'XMLTV' }).click();
+  const xml = page.getByTestId('xmltv-form');
+  await xml.getByLabel('File or URL').fill('/media/livetv/harness.xml');
+  await xml.getByRole('button', { name: 'Save' }).click();
+  await expect(page).toHaveURL(/#\/dashboard\/livetv$/, { timeout: 30_000 });
+  const provider = page.getByTestId('provider-item').filter({ hasText: '/media/livetv/harness.xml' });
+  await expect(provider).toHaveCount(1);
+  await provider.getByRole('button', { name: 'Map Channels' }).click();
+  const mapper = page.getByTestId('channel-mapper');
+  await expect(mapper.getByTestId('channel-row').filter({ hasText: 'Trench One' })).toBeVisible({ timeout: 30_000 });
+  await page.screenshot({ path: `${EVIDENCE}22-dashboard-livetv-map.png`, fullPage: true });
+  await mapper.getByRole('button', { name: 'Back' }).click();
+  await page.screenshot({ path: `${EVIDENCE}23-dashboard-livetv.png`, fullPage: true });
+
+  // Delete both, so the second deadfin pass starts clean.
+  await provider.getByRole('button', { name: 'Delete' }).click();
+  await provider.getByRole('group').getByRole('button', { name: 'Delete' }).click();
+  await expect(provider).toHaveCount(0);
+  await card.getByRole('button', { name: 'Delete' }).click();
+  await card.getByRole('group').getByRole('button', { name: 'Delete' }).click();
+  await expect(card).toHaveCount(0);
+});

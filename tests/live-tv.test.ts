@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApi } from '../src/api/client';
 import {
-  fetchM3UTuners,
+  displayUrl,
+  fetchChannelMappingOptions,
+  fetchLiveTvOptions,
+  fetchRefreshGuideTask,
+  fetchSchedulesDirectCountries,
   fetchTunerGroups,
   filterLists,
   initialFilter,
   keptChannels,
-  saveTunerFilter,
+  saveTunerHost,
   type TunerHost,
 } from '../src/api/liveTv';
 
@@ -42,16 +46,22 @@ describe('group filter state', () => {
 });
 
 describe('live tv api', () => {
-  it('lists only M3U tuners', async () => {
-    vi.stubGlobal('fetch', async () =>
-      json({ TunerHosts: [{ Id: 'a', Type: 'm3u' }, { Id: 'b', Type: 'hdhomerun' }, { Type: 'm3u' }] }),
-    );
-    expect(await fetchM3UTuners(createApi('http://s', 'tok'))).toEqual([{ Id: 'a', Type: 'm3u' }]);
+  it('reads the livetv configuration', async () => {
+    vi.stubGlobal('fetch', async (request: Request) => {
+      expect(request.url).toBe('http://s/System/Configuration/livetv');
+      return json({ TunerHosts: [{ Id: 'a', Type: 'm3u' }], GuideDays: 7 });
+    });
+    expect(await fetchLiveTvOptions(createApi('http://s', 'tok'))).toEqual({ TunerHosts: [{ Id: 'a', Type: 'm3u' }], GuideDays: 7 });
   });
 
   it('explains a 403', async () => {
     vi.stubGlobal('fetch', async () => json({}, 403));
-    await expect(fetchM3UTuners(createApi('http://s', 'tok'))).rejects.toThrow('administrator');
+    await expect(fetchLiveTvOptions(createApi('http://s', 'tok'))).rejects.toThrow('administrator');
+  });
+
+  it('says so when the server has no Live TV', async () => {
+    vi.stubGlobal('fetch', async () => json({}, 404));
+    await expect(fetchLiveTvOptions(createApi('http://s', 'tok'))).rejects.toThrow('This server has no Live TV settings.');
   });
 
   it('reads the groups with the session token', async () => {
@@ -65,14 +75,58 @@ describe('live tv api', () => {
     expect(seen[0]?.auth).toContain('Token="tok"');
   });
 
-  it('saves the whole tuner with both lists', async () => {
+  it('saves the stored tuner with the form on top', async () => {
     let body: unknown;
     vi.stubGlobal('fetch', async (request: Request) => {
       body = await request.json();
       return json(body);
     });
-    const tuner: TunerHost = { Id: 'a', Type: 'm3u', Url: 'http://p/list.m3u', TunerCount: 5, IncludeGroups: ['Old'] };
-    await saveTunerFilter(createApi('http://s', 'tok'), tuner, 'exclude', ['News']);
-    expect(body).toEqual({ Id: 'a', Type: 'm3u', Url: 'http://p/list.m3u', TunerCount: 5, IncludeGroups: [], ExcludeGroups: ['News'] });
+    const stored: TunerHost = { Id: 'a', Type: 'm3u', Url: 'http://p/list.m3u', TunerCount: 5, ExcludeGroups: ['Old'], StreamOpenIntervalMs: 500 };
+    await saveTunerHost(createApi('http://s', 'tok'), stored, { Id: 'a', Type: 'm3u', Url: 'http://p/new.m3u', TunerCount: 2 });
+    expect(body).toEqual({ Id: 'a', Type: 'm3u', Url: 'http://p/new.m3u', TunerCount: 2, ExcludeGroups: ['Old'], StreamOpenIntervalMs: 500 });
+  });
+
+  it('finds the Refresh Guide task among the visible tasks', async () => {
+    let url = '';
+    vi.stubGlobal('fetch', async (request: Request) => {
+      url = request.url;
+      return json([{ Id: '1', Key: 'CleanLogFiles' }, { Id: '2', Key: 'RefreshGuide', State: 'Idle' }]);
+    });
+    expect((await fetchRefreshGuideTask(createApi('http://s', 'tok')))?.Id).toBe('2');
+    expect(url).toBe('http://s/ScheduledTasks?isHidden=false');
+  });
+
+  it('lists Schedules Direct countries by name, without region ZZZ', async () => {
+    vi.stubGlobal('fetch', async () =>
+      json({
+        'North America': [{ fullName: 'United States', shortName: 'USA' }, { fullName: 'Canada', shortName: 'CAN' }],
+        ZZZ: [{ fullName: 'Test', shortName: 'ZZZ' }],
+      }),
+    );
+    expect(await fetchSchedulesDirectCountries(createApi('http://s', 'tok'))).toEqual([
+      { name: 'Canada', value: 'CAN' },
+      { name: 'United States', value: 'USA' },
+    ]);
+  });
+
+  it('reads the channel mapping options', async () => {
+    vi.stubGlobal('fetch', async (request: Request) => {
+      expect(request.url).toBe('http://s/LiveTv/ChannelMappingOptions?providerId=p1');
+      return json({ TunerChannels: [{ Id: 'c', Name: 'One' }], ProviderChannels: [{ Id: 'g', Name: 'Guide One' }], ProviderName: 'XmlTV' });
+    });
+    expect(await fetchChannelMappingOptions(createApi('http://s', 'tok'), 'p1')).toEqual({
+      TunerChannels: [{ Id: 'c', Name: 'One' }],
+      ProviderChannels: [{ Id: 'g', Name: 'Guide One' }],
+      ProviderName: 'XmlTV',
+    });
+  });
+});
+
+describe('displayUrl', () => {
+  it('hides the query, which holds playlist credentials', () => {
+    expect(displayUrl('https://panel.example/get.php?username=u&password=p&type=m3u')).toBe('https://panel.example/get.php?…');
+    expect(displayUrl('http://p/list.m3u')).toBe('http://p/list.m3u');
+    expect(displayUrl('/media/list.m3u')).toBe('/media/list.m3u');
+    expect(displayUrl(null)).toBe('');
   });
 });

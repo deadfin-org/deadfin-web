@@ -1,0 +1,19 @@
+.settings-form {
+  max-width: 54em;
+}
+
+.form-fieldset {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+
+.form-fieldset legend {
+  margin-bottom: 10px;
+  padding: 0;
+  font-weight: 600;
+}
+
+.form-fieldset .form-field {
+  margin-bottom: 8px;
+}

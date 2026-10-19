@@ -46,6 +46,8 @@ describe('dashboard drawer', () => {
     for (const r of dashboardRoutes) {
       // Detail routes (users/:userId/:tab, tasks/:id …) open from their list page.
       if (r.path.includes(':') || r.path.endsWith('/add')) continue;
+      // jellyfin-web's Live TV tuner and guide provider pages (?id=) open from Live TV.
+      if (r.path === 'livetv/tuner' || r.path === 'livetv/guide') continue;
       expect(known, r.path).toContain(r.path);
     }
   });

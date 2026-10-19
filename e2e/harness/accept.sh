@@ -150,6 +150,25 @@ gen_file 'formats/Twin Echo (2022)/Twin Echo (2022).webm' \
   -metadata:s:a:1 language=fre -metadata:s:a:1 title=French \
   -disposition:a:0 default -disposition:a:1 0 -shortest
 
+# Live TV: a two-channel M3U playlist and its XMLTV guide, read from /media
+# (no library scans /media/livetv). The dashboard tuner and guide provider
+# tests add and remove them; no stream is opened.
+mkdir -p .state/media/livetv
+cat > .state/media/livetv/harness.m3u <<'M3U'
+#EXTM3U
+#EXTINF:-1 tvg-id="trench.one" tvg-name="Trench One" group-title="News",Trench One
+http://127.0.0.1:9/trench-one.ts
+#EXTINF:-1 tvg-id="trench.two" tvg-name="Trench Two" group-title="Sports",Trench Two
+http://127.0.0.1:9/trench-two.ts
+M3U
+cat > .state/media/livetv/harness.xml <<'XMLTV'
+<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="trench.one"><display-name>Trench One</display-name></channel>
+  <channel id="trench.two"><display-name>Trench Two</display-name></channel>
+</tv>
+XMLTV
+
 # ---- helpers ----------------------------------------------------------------
 wait_ping() { # $1 = base url
   for i in $(seq 1 60); do
