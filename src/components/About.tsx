@@ -23,20 +23,31 @@ export function About({ serverUrl, identity }: { serverUrl: string; identity?: S
   };
   return (
     <details className="about" data-testid="about">
-      <summary className="home-signout readout">about</summary>
+      <summary role="menuitem">About</summary>
       <div className="about-panel">
         <dl className="about-list">
           <dt className="readout">Web client</dt>
-          <dd data-testid="about-web">{describeWebBuild(webBuild)}</dd>
+          <dd data-testid="about-web">
+            <WebBuildReadout />
+          </dd>
           <dt className="readout">Server</dt>
           <dd data-testid="about-server">{server}</dd>
           <dt className="readout">Address</dt>
           <dd>{serverUrl}</dd>
         </dl>
         <button type="button" className="home-signout readout" onClick={copy}>
-          {copied ? 'copied ✓' : 'copy for a bug report'}
+          {copied ? 'Copied' : 'Copy for a bug report'}
         </button>
       </div>
     </details>
+  );
+}
+
+/** Web bundle build identity: the same object the auth Version header uses (issue #26). */
+export function WebBuildReadout() {
+  return (
+    <span data-testid="web-build" title={webBuild.commit}>
+      {describeWebBuild(webBuild)}
+    </span>
   );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import { WebBuildReadout } from '../src/pages/Home';
+import { WebBuildReadout } from '../src/components/About';
 import { describeWebBuild, webBuild } from '../src/build';
 
 // Vitest globals are off — register cleanup explicitly so retained DOM

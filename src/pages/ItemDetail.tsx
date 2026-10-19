@@ -1,18 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../api/AuthContext';
 import { backdropImageUrl, primaryBlurhash, primaryImageUrl, type Api } from '../api/client';
 import { episodeLabel } from '../api/tv';
 import { Poster } from '../components/Poster';
 import { SeriesEpisodes } from './Series';
 import { formatRemaining, formatRuntime, progressPercent } from '../lib/format';
+import { detailsUrl, paths, videoUrl } from '../routes/paths';
 import './item-detail.css';
 
 export function ItemDetail() {
-  const { itemId } = useParams<{ itemId: string }>();
+  const itemId = useSearchParams()[0].get('id');
   const { session, api } = useAuth();
   if (!session || !api || !itemId) return null;
-  return <Detail api={api} serverUrl={session.serverUrl} userId={session.userId} itemId={itemId} />;
+  return <Detail key={itemId} api={api} serverUrl={session.serverUrl} userId={session.userId} itemId={itemId} />;
 }
 
 function Detail(props: { api: Api; serverUrl: string; userId: string; itemId: string }) {
@@ -55,14 +56,14 @@ function Detail(props: { api: Api; serverUrl: string; userId: string; itemId: st
   if (item.isPending)
     return (
       <main className="detail">
-        <p className="home-status readout">sounding…</p>
+        <p className="home-status readout">Loading…</p>
       </main>
     );
   if (item.isError)
     return (
       <main className="detail">
         <p className="home-status readout" role="alert">
-          ▲ item unreadable — <Link to="/">surface</Link>
+          This item could not be loaded. <Link to={paths.home}>Home</Link>
         </p>
       </main>
     );
@@ -70,7 +71,7 @@ function Detail(props: { api: Api; serverUrl: string; userId: string; itemId: st
   const it = item.data;
   // Seasons open as their series with that season selected.
   if (it.Type === 'Season' && it.SeriesId) {
-    return <Navigate to={`/item/${it.SeriesId}?season=${it.Id}`} replace />;
+    return <Navigate to={detailsUrl(it.SeriesId, { season: it.Id })} replace />;
   }
   const playable = isPlayable(it);
   const backdrop = backdropImageUrl(serverUrl, it);
@@ -90,11 +91,6 @@ function Detail(props: { api: Api; serverUrl: string; userId: string; itemId: st
         {backdrop && <img src={backdrop} alt="" />}
       </div>
 
-      <nav className="detail-nav">
-        <Link to="/" className="detail-back readout">
-          ← surface
-        </Link>
-      </nav>
 
       <section className="detail-body">
         <div className="detail-poster">
@@ -109,11 +105,11 @@ function Detail(props: { api: Api; serverUrl: string; userId: string; itemId: st
         <div className="detail-info">
           {it.Type === 'Episode' && it.SeriesId && (
             <p className="detail-crumbs readout" data-testid="detail-crumbs">
-              <Link to={`/item/${it.SeriesId}`}>{it.SeriesName ?? 'Series'}</Link>
+              <Link to={detailsUrl(it.SeriesId)}>{it.SeriesName ?? 'Series'}</Link>
               {it.SeasonId && (
                 <>
                   {' · '}
-                  <Link to={`/item/${it.SeriesId}?season=${it.SeasonId}`}>{it.SeasonName ?? 'Season'}</Link>
+                  <Link to={detailsUrl(it.SeriesId, { season: it.SeasonId })}>{it.SeasonName ?? 'Season'}</Link>
                 </>
               )}
               {episodeLabel(it) && ` · ${episodeLabel(it)}`}
@@ -138,9 +134,9 @@ function Detail(props: { api: Api; serverUrl: string; userId: string; itemId: st
               <button
                 className="action-primary"
                 data-testid="action-play"
-                onClick={() => navigate(`/play/${itemId}`)}
+                onClick={() => navigate(videoUrl(itemId))}
               >
-                ▶ descend
+                ▶ Play
               </button>
             )}
             {playable && progress > 0 && !played && (
@@ -148,10 +144,10 @@ function Detail(props: { api: Api; serverUrl: string; userId: string; itemId: st
                 className="action-primary"
                 data-testid="action-resume"
                 onClick={() =>
-                  navigate(`/play/${itemId}?t=${it.UserData?.PlaybackPositionTicks ?? 0}`)
+                  navigate(videoUrl(itemId, it.UserData?.PlaybackPositionTicks))
                 }
               >
-                ↓ resume descent
+                Resume
               </button>
             )}
             <button
@@ -160,7 +156,7 @@ function Detail(props: { api: Api; serverUrl: string; userId: string; itemId: st
               disabled={setUserData.isPending}
               onClick={() => setUserData.mutate({ kind: 'played', on: !played })}
             >
-              {played ? '✓ surfaced' : 'mark surfaced'}
+              {played ? '✓ Played' : 'Mark played'}
             </button>
             <button
               className={favorite ? 'action-toggle is-on' : 'action-toggle'}
@@ -168,7 +164,7 @@ function Detail(props: { api: Api; serverUrl: string; userId: string; itemId: st
               disabled={setUserData.isPending}
               onClick={() => setUserData.mutate({ kind: 'favorite', on: !favorite })}
             >
-              {favorite ? '◆ bioluminous' : 'mark bioluminous'}
+              {favorite ? '♥ Favorite' : 'Add to favorites'}
             </button>
           </div>
 
@@ -190,7 +186,7 @@ function Detail(props: { api: Api; serverUrl: string; userId: string; itemId: st
 
           {it.People && it.People.length > 0 && (
             <div className="detail-people">
-              <h2 className="readout">crew manifest</h2>
+              <h2 className="readout">Cast & Crew</h2>
               <ul>
                 {it.People.slice(0, 8).map((p, i) => (
                   <li key={p.Id ?? i}>

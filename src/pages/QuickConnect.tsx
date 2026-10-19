@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../api/AuthContext';
 import { authorizeQuickConnect, normalizeCode } from '../api/quickConnect';
 import './login.css';
@@ -31,11 +30,8 @@ export function QuickConnect() {
 
   return (
     <main className="qc">
-      <nav className="qc-crumbs readout">
-        <Link to="/">← home</Link>
-      </nav>
       <form className="qc-panel" onSubmit={submit}>
-        <h1 className="qc-head">Sign in a device</h1>
+        <h1 className="qc-head">Quick Connect</h1>
         <p className="qc-note">
           On the TV or phone, choose Quick Connect. Type the code it shows here to sign it in as{' '}
           <strong>{session.userName}</strong>.

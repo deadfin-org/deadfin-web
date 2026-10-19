@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../api/AuthContext';
 import { fetchSearch } from '../api/search';
 import { ItemCard } from '../components/ItemCard';
@@ -33,10 +33,7 @@ export function Search() {
 
   return (
     <div className="home">
-      <header className="home-bar library-bar">
-        <Link to="/" className="library-back readout">
-          ← home
-        </Link>
+      <header className="page-bar library-bar">
         <input
           className="search-input"
           type="search"
@@ -52,10 +49,10 @@ export function Search() {
       <main className="home-main" data-testid="search-results">
         {!term ? null : results.isError ? (
           <p className="home-status readout" role="alert">
-            ▲ search failed
+            Search failed.
           </p>
         ) : !results.data ? (
-          <p className="home-status readout">searching…</p>
+          <p className="home-status readout">Searching…</p>
         ) : results.data.length === 0 ? (
           <p className="home-status readout" data-testid="search-empty">
             nothing matches “{term}”

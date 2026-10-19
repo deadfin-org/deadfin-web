@@ -20,7 +20,7 @@ test('first run: the setup wizard takes a new server to a signed-in home', async
     // The server that served the app needs setup: straight to the wizard.
     await expect(page).toHaveURL(/#\/setup\?server=/);
   } else {
-    await page.getByLabel('server').fill(SERVER);
+    await page.getByLabel('Server').fill(SERVER);
     await expect(page.getByTestId('setup-needed')).toBeVisible();
     await page.screenshot({ path: `${EVIDENCE}01-setup-needed.png` });
     await page.getByRole('link', { name: 'Set it up now' }).click();
@@ -57,7 +57,7 @@ test('first run: the setup wizard takes a new server to a signed-in home', async
   await page.getByRole('button', { name: 'Finish and sign in' }).click();
 
   // Signed in as the new administrator; the scan fills the Movies shelf.
-  await expect(page).toHaveURL(/#\/$/, { timeout: 20_000 });
+  await expect(page).toHaveURL(/#\/home$/, { timeout: 20_000 });
   await expect(page.getByTestId('connection')).toBeVisible();
   // Home loads once; the scan may still be running, so look again until done.
   await expect(async () => {

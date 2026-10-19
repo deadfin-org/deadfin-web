@@ -6,6 +6,7 @@ import { defaultServerFor, normalizeServerUrl } from '../api/session';
 import { needsSetup } from '../api/setup';
 import { SharkMark } from '../components/SharkMark';
 import './login.css';
+import { paths } from '../routes/paths';
 
 export function Login() {
   const { signIn, sessionEnded } = useAuth();
@@ -52,9 +53,9 @@ export function Login() {
     setError(null);
     try {
       await signIn(server, username, password);
-      navigate('/', { replace: true });
+      navigate(paths.home, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'The descent failed.');
+      setError(err instanceof Error ? err.message : 'Sign in failed.');
     } finally {
       setBusy(false);
     }
@@ -62,21 +63,15 @@ export function Login() {
 
   return (
     <main className="login">
-      <div className="login-depthticks readout" aria-hidden="true">
-        {['0 m', '−200 m', '−1000 m', '−4000 m', '−10935 m'].map((d) => (
-          <span key={d}>{d}</span>
-        ))}
-      </div>
-
       <form className="login-panel" onSubmit={onSubmit}>
         <div className="login-mark">
           <SharkMark size={104} ping={busy} />
         </div>
         <h1 className="login-word">DEADFIN</h1>
-        <p className="login-sub readout">media system · abyssal division</p>
+        <p className="login-sub readout">Please sign in</p>
 
         <label className="field">
-          <span className="readout">server</span>
+          <span className="readout">Server</span>
           <input
             name="server"
             value={server}
@@ -88,7 +83,7 @@ export function Login() {
           />
         </label>
         <label className="field">
-          <span className="readout">operator</span>
+          <span className="readout">User</span>
           <input
             name="username"
             value={username}
@@ -100,7 +95,7 @@ export function Login() {
           />
         </label>
         <label className="field">
-          <span className="readout">passphrase</span>
+          <span className="readout">Password</span>
           <input
             name="password"
             type="password"
@@ -130,7 +125,7 @@ export function Login() {
         )}
 
         <button className="login-submit" type="submit" disabled={busy}>
-          {busy ? 'descending…' : 'Descend'}
+          {busy ? 'Signing in…' : 'Sign In'}
         </button>
       </form>
     </main>

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../api/AuthContext';
+import { PageHeader } from '../ui/PageHeader';
 import type { Api } from '../api/client';
 import {
   fetchM3UTuners,
@@ -30,22 +30,18 @@ export function LiveTvGroups() {
   if (!session || !api) return null;
 
   return (
-    <div className="home">
-      <header className="home-bar library-bar">
-        <Link to="/" className="library-back readout">
-          ← home
-        </Link>
-        <h1 className="shelf-name">Live TV groups</h1>
-      </header>
-      <main className="home-main">
+    <div>
+      <PageHeader title="Live TV" />
+      <h2 className="form-section-title">M3U tuner groups</h2>
+      <main>
         {tuners.isError ? (
           <p className="home-status readout" role="alert">
             ▲ {tuners.error.message}
           </p>
         ) : !tuners.data ? (
-          <p className="home-status readout">loading…</p>
+          <p className="home-status readout">Loading…</p>
         ) : tuners.data.length === 0 ? (
-          <p className="home-status readout">no M3U tuners</p>
+          <p className="home-status readout">No M3U tuners.</p>
         ) : (
           tuners.data.map((t) => (
             <TunerGroupPicker key={t.Id} api={api} serverUrl={session.serverUrl} token={session.accessToken} tuner={t} />
@@ -107,7 +103,7 @@ export function TunerGroupPicker({ api, serverUrl, token, tuner }: { api: Api; s
           ▲ {groups.error.message}
         </p>
       ) : !groups.data ? (
-        <p className="readout">loading…</p>
+        <p className="readout">Loading…</p>
       ) : !groups.data.Loaded ? (
         <p className="readout">The playlist is not loaded yet. Run Refresh Guide, then reload this page.</p>
       ) : (
@@ -135,9 +131,9 @@ export function TunerGroupPicker({ api, serverUrl, token, tuner }: { api: Api; s
       )}
       <div className="tuner-groups-actions">
         <button type="button" className="lib-button readout is-primary" disabled={save.isPending} onClick={() => save.mutate()}>
-          {save.isPending ? 'saving…' : 'save and refresh guide'}
+          {save.isPending ? 'Saving…' : 'Save and refresh guide'}
         </button>
-        {save.isSuccess && <span className="readout">saved; the guide refresh applies it</span>}
+        {save.isSuccess && <span className="readout">Saved. The guide refresh applies it.</span>}
         {save.isError && (
           <span className="login-error readout" role="alert">
             ▲ {save.error.message}

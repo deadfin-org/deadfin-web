@@ -7,18 +7,18 @@ const shelf = (page: Page, name: string) =>
 const SERVER = process.env.HARNESS_SERVER ?? 'http://localhost:8097';
 const EVIDENCE = (process.env.EVIDENCE_DIR ?? new URL('./evidence', import.meta.url).pathname) + '/';
 
-async function descend(page: Page) {
+async function signIn(page: Page) {
   await page.goto('./#/login');
   await expect(page.getByRole('heading', { name: 'DEADFIN' })).toBeVisible();
   await expect(page.locator('.login-panel')).toHaveCSS('opacity', '1');
-  await page.getByLabel('server').fill(SERVER);
-  await page.getByLabel('operator').fill('abyss');
-  await page.getByLabel('passphrase').fill('trench-test-1');
-  await page.getByRole('button', { name: /descend/i }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await page.getByLabel('Server').fill(SERVER);
+  await page.getByLabel('User').fill('abyss');
+  await page.getByLabel('Password').fill('trench-test-1');
+  await page.getByRole('button', { name: 'Sign In' }).click();
+  await expect(page).toHaveURL(/#\/home$/);
 }
 
-test('descend: connect → login → home grid renders the library', async ({ page }) => {
+test('sign in: connect → login → home grid renders the library', async ({ page }) => {
   const front = await page.goto('./#/login');
   // The static front sends the README's hardening headers; the CSP guard
   // (fixtures.ts) then fails any test the policy would break.
@@ -28,21 +28,19 @@ test('descend: connect → login → home grid renders the library', async ({ pa
   }
   await expect(page.getByRole('heading', { name: 'DEADFIN' })).toBeVisible();
   await expect(page.locator('.login-panel')).toHaveCSS('opacity', '1');
-  await page.getByLabel('server').fill(SERVER);
-  await page.getByLabel('operator').fill('abyss');
-  await page.getByLabel('passphrase').fill('trench-test-1');
+  await page.getByLabel('Server').fill(SERVER);
+  await page.getByLabel('User').fill('abyss');
+  await page.getByLabel('Password').fill('trench-test-1');
   await page.screenshot({ path: `${EVIDENCE}01-login.png`, fullPage: true });
-  await page.getByRole('button', { name: /descend/i }).click();
+  await page.getByRole('button', { name: 'Sign In' }).click();
 
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/#\/home$/);
   await expect(page.getByTestId('connection')).toBeVisible();
-  // The header names the real server build, not only the compatibility version.
-  if (process.env.HARNESS_PRODUCT) {
-    await expect(page.getByTestId('server-build')).toContainText(process.env.HARNESS_PRODUCT);
-  }
-  await page.getByText('about', { exact: true }).click();
+  await page.getByTestId('user-menu-button').click();
+  await page.getByText('About', { exact: true }).click();
   await expect(page.getByTestId('about-server')).toContainText(process.env.HARNESS_PRODUCT ?? '');
   await expect(page.getByTestId('about-web')).toContainText('web ');
+  await page.keyboard.press('Escape');
 
   // The Movies shelf surfaces with all three seeded movies…
   const moviesShelf = shelf(page, 'Movies');
@@ -55,16 +53,17 @@ test('descend: connect → login → home grid renders the library', async ({ pa
   await page.screenshot({ path: `${EVIDENCE}02-home.png`, fullPage: true });
 
   // Sign out surfaces back to the login page and drops the session.
-  await page.getByRole('button', { name: /surface/i }).click();
+  await page.getByTestId('user-menu-button').click();
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
   await expect(page).toHaveURL(/\/login$/);
 });
 
 test('bad credentials fault visibly, no navigation', async ({ page }) => {
   await page.goto('./#/login');
-  await page.getByLabel('server').fill(SERVER);
-  await page.getByLabel('operator').fill('abyss');
-  await page.getByLabel('passphrase').fill('wrong-passphrase');
-  await page.getByRole('button', { name: /descend/i }).click();
+  await page.getByLabel('Server').fill(SERVER);
+  await page.getByLabel('User').fill('abyss');
+  await page.getByLabel('Password').fill('wrong-passphrase');
+  await page.getByRole('button', { name: 'Sign In' }).click();
 
   await expect(page.getByRole('alert')).toBeVisible();
   await expect(page).toHaveURL(/\/login$/);
@@ -72,7 +71,7 @@ test('bad credentials fault visibly, no navigation', async ({ page }) => {
 });
 
 test('continue watching, item detail, user-data toggles', async ({ page }) => {
-  await descend(page);
+  await signIn(page);
 
   // The seeded in-progress movie surfaces first, with its progress strip.
   const resume = page.getByTestId('resume-shelf');
@@ -88,7 +87,7 @@ test('continue watching, item detail, user-data toggles', async ({ page }) => {
 
   // Into the detail page via the resume card.
   await resume.getByTestId('item-link').click();
-  await expect(page).toHaveURL(/\/item\//);
+  await expect(page).toHaveURL(/\/details\?id=/);
   await expect(page.getByTestId('item-detail')).toBeVisible();
   await expect(page.getByRole('heading', { name: /Voyage to the Trench/ })).toBeVisible();
   await expect(page.getByTestId('detail-progress')).toBeVisible();
@@ -113,15 +112,15 @@ test('continue watching, item detail, user-data toggles', async ({ page }) => {
 });
 
 test('direct play, controls, and server-verified progress reporting', async ({ page }) => {
-  await descend(page);
+  await signIn(page);
 
   // Un-watched movie → detail → descend into playback.
   await page.getByText('Pressure Hull').first().click();
   await expect(page.getByTestId('item-detail')).toBeVisible();
   const itemUrl = page.url();
-  const itemId = itemUrl.split('/item/')[1]!;
+  const itemId = itemUrl.split('/details?id=')[1]!.split('&')[0]!;
   await page.getByTestId('action-play').click();
-  await expect(page).toHaveURL(/\/play\//);
+  await expect(page).toHaveURL(/\/video\?id=/);
 
   // Direct play negotiated and actually rolling.
   const video = page.getByTestId('player-video');
@@ -180,7 +179,7 @@ test('direct play, controls, and server-verified progress reporting', async ({ p
   await page.goto('./');
   await page.getByTestId('resume-shelf').getByTestId('item-link').click();
   await page.getByTestId('action-resume').click();
-  await expect(page).toHaveURL(/\/play\/.*\?t=/);
+  await expect(page).toHaveURL(/\/video\?id=.*&t=/);
   await expect
     .poll(async () => page.getByTestId('player-video').evaluate((v: HTMLVideoElement) => v.currentTime), {
       timeout: 15_000,
@@ -189,11 +188,12 @@ test('direct play, controls, and server-verified progress reporting', async ({ p
 });
 
 test('sign-out ends the server session', async ({ page }) => {
-  await descend(page);
+  await signIn(page);
   const session = JSON.parse(
     (await page.evaluate(() => localStorage.getItem('deadfin.session.v1')))!,
   ) as { accessToken: string };
-  await page.getByRole('button', { name: /surface/i }).click();
+  await page.getByTestId('user-menu-button').click();
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
   await expect(page).toHaveURL(/\/login$/);
 
   // The old token no longer authenticates.
@@ -210,7 +210,7 @@ test('sign-out ends the server session', async ({ page }) => {
 });
 
 test('a revoked token returns to sign-in with a message', async ({ page }) => {
-  await descend(page);
+  await signIn(page);
   await expect(page.getByTestId('shelf').first()).toBeVisible({ timeout: 20_000 });
 
   // End the session server-side, as a dashboard device delete would.
@@ -231,7 +231,7 @@ test('a revoked token returns to sign-in with a message', async ({ page }) => {
 });
 
 test('library page: count, paging past the shelf, sort and filter', async ({ page }) => {
-  await descend(page);
+  await signIn(page);
 
   // The home shelf shows the newest 24 and the real total.
   const archive = shelf(page, 'Archive');
@@ -287,7 +287,7 @@ async function resetEpisodes(page: Page) {
 }
 
 test('tv: series, seasons, episodes, next up and up next', async ({ page }) => {
-  await descend(page);
+  await signIn(page);
   const { headers, userId, episodes } = await resetEpisodes(page);
   await page.reload();
 
@@ -338,12 +338,12 @@ test('tv: series, seasons, episodes, next up and up next', async ({ page }) => {
   await expect(upNext).toContainText('S1:E2');
   await page.screenshot({ path: `${EVIDENCE}09-up-next.png` });
   await page.getByTestId('up-next-play').click();
-  await expect(page).toHaveURL(/\/play\//);
+  await expect(page).toHaveURL(/\/video\?id=/);
   await expect.poll(() => page.getByTestId('player-video').evaluate((v: HTMLVideoElement) => v.currentTime), { timeout: 15_000 }).toBeGreaterThan(0.5);
 });
 
 test('tv: marking an episode played sticks', async ({ page }) => {
-  await descend(page);
+  await signIn(page);
   await resetEpisodes(page);
   await page.reload();
   await shelf(page, 'Shows').getByTestId('item-link').first().click();
@@ -361,9 +361,10 @@ test('quick connect: a waiting device is signed in by its code', async ({ page }
   expect(initiate.ok()).toBe(true);
   const { Code: code, Secret: secret } = (await initiate.json()) as { Code: string; Secret: string };
 
-  await descend(page);
+  await signIn(page);
+  await page.getByTestId('user-menu-button').click();
   await page.getByTestId('quick-connect-link').click();
-  await expect(page.getByRole('heading', { name: 'Sign in a device' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Quick Connect' })).toBeVisible();
 
   // A wrong code says what went wrong and authorizes nothing.
   const wrong = code === '000000' ? '000001' : '000000';
@@ -382,9 +383,9 @@ test('quick connect: a waiting device is signed in by its code', async ({ page }
 });
 
 test('search: results grouped by kind, links to the item, empty state', async ({ page }) => {
-  await descend(page);
+  await signIn(page);
   await page.getByTestId('search-link').click();
-  await page.getByLabel('Search').fill('trench');
+  await page.getByRole('searchbox', { name: 'Search' }).fill('trench');
   await expect(page).toHaveURL(/search\?q=trench/);
   const movies = page.getByTestId('search-group').filter({ hasText: 'Movies' });
   await expect(movies.getByText('Voyage to the Trench')).toBeVisible();
@@ -392,18 +393,18 @@ test('search: results grouped by kind, links to the item, empty state', async ({
   await page.screenshot({ path: `${EVIDENCE}09-search.png`, fullPage: true });
 
   await movies.getByTestId('item-link').click();
-  await expect(page).toHaveURL(/\/item\//);
+  await expect(page).toHaveURL(/\/details\?id=/);
   await expect(page.getByRole('heading', { name: /Voyage to the Trench/ })).toBeVisible();
 
   // Back keeps the search; a term nothing matches says so.
   await page.goBack();
-  await expect(page.getByLabel('Search')).toHaveValue('trench');
-  await page.getByLabel('Search').fill('zzqx-nothing');
+  await expect(page.getByRole('searchbox', { name: 'Search' })).toHaveValue('trench');
+  await page.getByRole('searchbox', { name: 'Search' }).fill('zzqx-nothing');
   await expect(page.getByTestId('search-empty')).toBeVisible();
 });
 
 test('transcode: a file the browser cannot decode plays through HLS', async ({ page }) => {
-  await descend(page);
+  await signIn(page);
   // Deadfin v0.3.0-rc.3 finding: its HLS encoder makes H.264/AAC only, yet
   // PlaybackInfo hands out a TranscodingUrl for the profile's codecs (AV1/Opus
   // for Playwright's Chromium, which has no H.264), and master.m3u8 answers
@@ -413,7 +414,7 @@ test('transcode: a file the browser cannot decode plays through HLS', async ({ p
   test.fail(process.env.HARNESS_PRODUCT === 'Deadfin' && !h264, 'Deadfin HLS encodes H.264/AAC only');
   await page.getByTestId('shelf').filter({ hasText: 'Other formats' }).getByTestId('item-link').filter({ hasText: 'Hull Breach' }).click();
   await expect(page.getByTestId('item-detail')).toBeVisible();
-  const itemId = page.url().split('/item/')[1]!;
+  const itemId = page.url().split('/details?id=')[1]!.split('&')[0]!;
   await page.getByTestId('action-play').click();
 
   const video = page.getByTestId('player-video');
@@ -446,7 +447,7 @@ test('transcode: a file the browser cannot decode plays through HLS', async ({ p
 });
 
 async function playFromFormats(page: Page, title: string) {
-  await descend(page);
+  await signIn(page);
   const shelf = page.getByTestId('shelf').filter({ hasText: 'Other formats' });
   await shelf.getByTestId('item-link').filter({ hasText: title }).click();
   await expect(page.getByTestId('item-detail')).toBeVisible();
@@ -506,4 +507,76 @@ test('tracks: switching audio re-negotiates and keeps the position', async ({ pa
     .poll(async () => video.evaluate((v: HTMLVideoElement) => (v.paused ? -1 : v.currentTime)), { timeout: 45_000 })
     .toBeGreaterThan(at - 2);
   await expect(menu.getByRole('radio', { name: /French/ })).toBeChecked();
+});
+
+test('app bar, drawer, user menu and dashboard follow jellyfin-web', async ({ page }) => {
+  await signIn(page);
+
+  // Drawer: Home, Favorites, then the libraries.
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  const drawer = page.getByRole('navigation', { name: 'Main menu' });
+  await expect(drawer.getByRole('link', { name: 'Home' })).toBeVisible();
+  await expect(drawer.getByRole('link', { name: 'Favorites' })).toBeVisible();
+  await drawer.getByRole('link', { name: 'Movies' }).click();
+  await expect(page).toHaveURL(/#\/library\//);
+  await expect(drawer).toBeHidden();
+
+  // User menu → Dashboard (the harness user is an administrator).
+  await page.getByTestId('user-menu-button').click();
+  await page.getByRole('menuitem', { name: 'Dashboard' }).click();
+  await expect(page).toHaveURL(/#\/dashboard$/);
+  await expect(page.getByTestId('dashboard-server')).toContainText(process.env.HARNESS_PRODUCT === 'Deadfin' ? 'Deadfin' : '');
+  const dash = page.getByRole('navigation', { name: 'Dashboard menu' });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await dash.getByRole('link', { name: 'Live TV' }).click();
+  await expect(page).toHaveURL(/#\/dashboard\/livetv$/);
+  await expect(page.getByRole('heading', { name: 'Live TV', level: 1 })).toBeVisible();
+
+  // Old paths still land.
+  await page.goto('./#/admin/livetv');
+  await expect(page).toHaveURL(/#\/dashboard\/livetv$/);
+  await page.screenshot({ path: `${EVIDENCE}20-dashboard.png`, fullPage: true });
+});
+
+test('streamed list: 40,000 items show at once, thumbnails within 1 s', async ({ page }) => {
+  // The server answers are synthetic (page.route), so this times the client
+  // alone: first page, lazy thumbnails, and paging on scroll. Dev has a
+  // 40,159-channel Live TV view; this keeps that list fast.
+  const TOTAL = 40_000;
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  await page.route(
+    (url) => url.pathname.endsWith('/Items') && url.searchParams.get('parentId') === 'big-view',
+    (route) => {
+      const q = new URL(route.request().url()).searchParams;
+      const start = Number(q.get('startIndex') ?? 0);
+      const limit = Number(q.get('limit') ?? 36);
+      const Items = Array.from({ length: Math.min(limit, TOTAL - start) }, (_, i) => ({
+        Id: `ch${start + i}`,
+        Name: `Channel ${start + i}`,
+        Type: 'TvChannel',
+        ImageTags: { Primary: 't' },
+      }));
+      return route.fulfill({ json: { Items, TotalRecordCount: TOTAL, StartIndex: start } });
+    },
+  );
+  await page.route(/\/Items\/ch\d+\/Images\/Primary/, (route) =>
+    route.fulfill({ body: png, contentType: 'image/png' }),
+  );
+
+  await signIn(page);
+  const started = Date.now();
+  await page.goto('./#/library/big-view');
+  await expect(page.getByTestId('library-count')).toHaveText('40000 items');
+  await expect(page.getByTestId('poster').first()).toBeVisible({ timeout: 1_000 });
+  await expect(page.locator('.poster-img.is-loaded').first()).toBeVisible({ timeout: 1_000 });
+  const firstRowsMs = Date.now() - started;
+  expect(firstRowsMs, 'first rows and a thumbnail').toBeLessThan(2_000);
+
+  // Scrolling streams the next pages in.
+  const before = await page.getByTestId('poster').count();
+  await page.mouse.wheel(0, 20_000);
+  await expect.poll(() => page.getByTestId('poster').count(), { timeout: 3_000 }).toBeGreaterThan(before);
 });

@@ -101,7 +101,7 @@ export function Setup() {
       await saveRemoteAccess(api, remote);
       await completeSetup(api);
       await signIn(serverUrl, adminName.trim(), password);
-      navigate('/', { replace: true });
+      navigate('/home', { replace: true });
     });
   };
 

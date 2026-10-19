@@ -51,7 +51,7 @@ describe('TunerGroupPicker', () => {
     fireEvent.click(screen.getByLabelText(/Sports/));
     expect(screen.getByTestId('kept-count').textContent).toBe('keeps 9 of 11 channels');
 
-    fireEvent.click(screen.getByText('save and refresh guide'));
+    fireEvent.click(screen.getByText('Save and refresh guide'));
     await waitFor(() => expect(saved).toHaveLength(1));
     expect(saved[0]).toEqual({
       Id: 't1',

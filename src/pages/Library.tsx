@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../api/AuthContext';
 import type { Api } from '../api/client';
 import {
@@ -85,10 +85,7 @@ function LibraryGrid(props: { api: Api; serverUrl: string; userId: string; viewI
 
   return (
     <div className="home">
-      <header className="home-bar library-bar">
-        <Link to="/" className="library-back readout">
-          ← home
-        </Link>
+      <header className="page-bar library-bar">
         <h1 className="library-title">{view?.Name ?? 'Library'}</h1>
         <span className="readout" data-testid="library-count">
           {total === undefined ? '· · ·' : countLabel(total)}
@@ -126,10 +123,10 @@ function LibraryGrid(props: { api: Api; serverUrl: string; userId: string; viewI
       <main className="home-main">
         {views.isError || items.isError ? (
           <p className="home-status readout" role="alert">
-            ▲ this library could not be loaded
+            This library could not be loaded.
           </p>
         ) : items.isPending ? (
-          <p className="home-status readout">loading…</p>
+          <p className="home-status readout">Loading…</p>
         ) : all.length === 0 ? (
           <p className="home-status readout" data-testid="library-empty">
             nothing here
@@ -149,7 +146,7 @@ function LibraryGrid(props: { api: Api; serverUrl: string; userId: string; viewI
             disabled={isFetchingNextPage}
             onClick={() => void fetchNextPage()}
           >
-            {isFetchingNextPage ? 'loading…' : 'load more'}
+            {isFetchingNextPage ? 'Loading…' : 'Load more'}
           </button>
         )}
       </main>

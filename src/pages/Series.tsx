@@ -5,6 +5,7 @@ import { primaryImageUrl } from '../api/client';
 import type { BaseItem } from '../api/library';
 import { episodeLabel, fetchEpisodes, fetchNextUp, fetchSeasons, pickSeason } from '../api/tv';
 import { formatRuntime, progressPercent } from '../lib/format';
+import { detailsUrl, videoUrl } from '../routes/paths';
 import './series.css';
 
 /** The "Play next" target for a series: its Next Up, else the first unplayed episode shown. */
@@ -14,8 +15,7 @@ export function playNextTarget(nextUp: BaseItem | undefined, episodes: BaseItem[
 
 /** Play URL for an episode, resuming where it was left. */
 export function playUrl(item: BaseItem): string {
-  const t = item.UserData?.PlaybackPositionTicks ?? 0;
-  return t > 0 && !item.UserData?.Played ? `/play/${item.Id}?t=${t}` : `/play/${item.Id}`;
+  return videoUrl(item.Id ?? '', item.UserData?.Played ? 0 : item.UserData?.PlaybackPositionTicks);
 }
 
 export function SeriesEpisodes(props: { api: Api; serverUrl: string; userId: string; seriesId: string }) {
@@ -44,7 +44,7 @@ export function SeriesEpisodes(props: { api: Api; serverUrl: string; userId: str
   if (seasons.isError) {
     return (
       <p className="home-status readout" role="alert">
-        ▲ seasons could not be loaded
+        Seasons could not be loaded.
       </p>
     );
   }
@@ -74,7 +74,16 @@ export function SeriesEpisodes(props: { api: Api; serverUrl: string; userId: str
             role="tab"
             aria-selected={s.Id === seasonId}
             className={s.Id === seasonId ? 'season-tab is-on readout' : 'season-tab readout'}
-            onClick={() => setParams({ season: s.Id ?? '' }, { replace: true })}
+            onClick={() =>
+              setParams(
+                (p) => {
+                  const next = new URLSearchParams(p);
+                  next.set('season', s.Id ?? '');
+                  return next;
+                },
+                { replace: true },
+              )
+            }
           >
             {s.Name ?? `Season ${s.IndexNumber ?? ''}`}
           </button>
@@ -87,7 +96,7 @@ export function SeriesEpisodes(props: { api: Api; serverUrl: string; userId: str
           const thumb = primaryImageUrl(serverUrl, e, 320);
           return (
             <li key={e.Id} className="episode-row" data-testid="episode-row">
-              <Link to={`/item/${e.Id}`} className="episode-thumb" aria-hidden="true" tabIndex={-1}>
+              <Link to={detailsUrl(e.Id ?? '')} className="episode-thumb" aria-hidden="true" tabIndex={-1}>
                 {thumb && <img src={thumb} alt="" loading="lazy" />}
                 {pct > 0 && !e.UserData?.Played && (
                   <span className="poster-progress">
@@ -96,7 +105,7 @@ export function SeriesEpisodes(props: { api: Api; serverUrl: string; userId: str
                 )}
               </Link>
               <div className="episode-info">
-                <Link to={`/item/${e.Id}`} className="episode-name">
+                <Link to={detailsUrl(e.Id ?? '')} className="episode-name">
                   <span className="readout">{episodeLabel(e)}</span> {e.Name}
                 </Link>
                 <span className="readout episode-meta">

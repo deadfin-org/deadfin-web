@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../api/AuthContext';
 import {
   directStreamUrl,
@@ -27,13 +27,14 @@ import {
 } from '../api/tracks';
 import { formatTimecode, secondsToTicks, ticksToSeconds } from '../lib/format';
 import { playUrl } from './Series';
+import { detailsUrl } from '../routes/paths';
 import './player.css';
 
 const PROGRESS_INTERVAL_MS = 5_000;
 const CONTROLS_HIDE_MS = 2_800;
 
 export function Player() {
-  const { itemId } = useParams<{ itemId: string }>();
+  const itemId = useSearchParams()[0].get('id');
   const { session, api } = useAuth();
   if (!session || !api || !itemId) return null;
   return <PlayerInner key={itemId} itemId={itemId} />;
@@ -318,7 +319,7 @@ function PlayerInner({ itemId }: { itemId: string }) {
     return (
       <main className="player player-faulted">
         <p className="home-status readout" role="alert">
-          ▲ {fault} — <Link to={`/item/${itemId}`}>back to the manifest</Link>
+          {fault} <Link to={detailsUrl(itemId)}>Back</Link>
         </p>
       </main>
     );
@@ -407,9 +408,10 @@ function PlayerInner({ itemId }: { itemId: string }) {
         <button
           className="player-back readout"
           data-testid="player-back"
-          onClick={() => navigate(`/item/${itemId}`)}
+          aria-label="Back"
+          onClick={() => navigate(detailsUrl(itemId))}
         >
-          ← surface
+          ←
         </button>
 
         <div className="player-bottom">

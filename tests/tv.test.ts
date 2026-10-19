@@ -45,7 +45,7 @@ describe('playNextTarget and playUrl', () => {
     expect(playNextTarget(undefined, [e1])?.Id).toBe('e1');
   });
   it('resumes a part-watched episode', () => {
-    expect(playUrl(e2)).toBe('/play/e2?t=30000000');
-    expect(playUrl(e1)).toBe('/play/e1');
+    expect(playUrl(e2)).toBe('/video?id=e2&t=30000000');
+    expect(playUrl(e1)).toBe('/video?id=e1');
   });
 });
