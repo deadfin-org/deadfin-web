@@ -255,9 +255,12 @@ See [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
-Bug reports and small, focused pull requests are welcome. Report bugs in
-the [Deadfin issues](https://github.com/deadfin-org/deadfin/issues) and
-mention deadfin-web in the title. Ask questions in
+Bug reports and small, focused pull requests are welcome. Report
+deadfin-web bugs in the
+[deadfin-web issues](https://github.com/deadfin-org/deadfin-web/issues).
+Give the deadfin-web version and the browser. Report server bugs in the
+[Deadfin issues](https://github.com/deadfin-org/deadfin/issues). For
+accessibility, see [ACCESSIBILITY.md](ACCESSIBILITY.md). Ask questions in
 [Deadfin discussions](https://github.com/deadfin-org/deadfin/discussions).
 Read the Deadfin
 [contributing guide](https://github.com/deadfin-org/deadfin/blob/master/CONTRIBUTING.md)
