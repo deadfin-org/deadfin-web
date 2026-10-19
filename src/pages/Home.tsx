@@ -33,6 +33,7 @@ export function Home() {
           <Link className="home-signout readout" to="/quickconnect" data-testid="quick-connect-link">
             sign in a device
           </Link>
+          <AdminLinks api={api} serverUrl={session.serverUrl} />
           <AboutMenu api={api} serverUrl={session.serverUrl} />
           <button className="home-signout readout" onClick={signOut}>
             surface ↑
@@ -76,6 +77,25 @@ function ConnectionReadout({ api, serverUrl }: { api: Api; serverUrl: string }) 
       {info?.ServerName ?? host}
       {identity && <span data-testid="server-build"> · {describeServer(identity)}</span>}
     </span>
+  );
+}
+
+/** Links for administrators only; a failed lookup shows nothing. */
+function AdminLinks({ api, serverUrl }: { api: Api; serverUrl: string }) {
+  const me = useQuery({
+    queryKey: ['users-me', serverUrl],
+    queryFn: async () => {
+      const { data, error } = await api.GET('/Users/Me');
+      if (error !== undefined) throw new Error('Users/Me failed');
+      return data;
+    },
+    staleTime: 5 * 60_000,
+  });
+  if (!me.data?.Policy?.IsAdministrator) return null;
+  return (
+    <Link className="home-signout readout" to="/admin/livetv" data-testid="livetv-groups-link">
+      live tv groups
+    </Link>
   );
 }
 

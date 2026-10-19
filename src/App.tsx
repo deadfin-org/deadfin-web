@@ -3,6 +3,7 @@ import { useAuth } from './api/AuthContext';
 import { Home } from './pages/Home';
 import { ItemDetail } from './pages/ItemDetail';
 import { Library } from './pages/Library';
+import { LiveTvGroups } from './pages/LiveTvGroups';
 import { Login } from './pages/Login';
 import { Player } from './pages/Player';
 import { Setup } from './pages/Setup';
@@ -33,6 +34,10 @@ export function App() {
         element={session ? <QuickConnect /> : <Navigate to="/login" replace />}
       />
       <Route path="/search" element={session ? <Search /> : <Navigate to="/login" replace />} />
+      <Route
+        path="/admin/livetv"
+        element={session ? <LiveTvGroups /> : <Navigate to="/login" replace />}
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
