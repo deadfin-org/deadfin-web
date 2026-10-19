@@ -1016,6 +1016,7 @@ test('details: the audio track chosen on the page carries into the player', asyn
 });
 
 test('details: collection and playlist, add, reorder, remove, delete', async ({ page }) => {
+  test.setTimeout(120_000);
   await signIn(page);
   const { headers } = await sessionApi(page);
   const voyage = await openMovie(page, 'Movies', 'Voyage to the Trench');
@@ -1028,11 +1029,19 @@ test('details: collection and playlist, add, reorder, remove, delete', async ({ 
   await coll.getByRole('button', { name: 'OK' }).click();
   await expect(page.getByTestId('item-detail')).toHaveAttribute('data-type', 'BoxSet', { timeout: 15_000 });
   const collectionId = page.url().split('/details?id=')[1]!.split('&')[0]!;
-  // The server links the items just after it answers; reload until it has.
-  await expect(async () => {
-    await page.reload();
-    await expect(page.getByTestId('collection-items')).toContainText('Movies', { timeout: 2_000 });
-  }).toPass({ timeout: 20_000 });
+  // Stock Jellyfin links the items some time after it answers. Wait on the
+  // server, not on the page, then load the page once.
+  await expect
+    .poll(
+      async () => {
+        const r = await page.request.get(`${SERVER}/Items?parentId=${collectionId}&limit=1`, { headers });
+        return r.ok() ? ((await r.json()) as { TotalRecordCount: number }).TotalRecordCount : 0;
+      },
+      { timeout: 60_000, intervals: [500, 1_000, 2_000] },
+    )
+    .toBeGreaterThan(0);
+  await page.reload();
+  await expect(page.getByTestId('collection-items')).toContainText('Movies', { timeout: 15_000 });
   await expect(page.getByTestId('collection-items').getByTestId('item-link')).toContainText(['Voyage to the Trench']);
   await expect(page.getByTestId('action-play')).toBeVisible();
   await page.screenshot({ path: `${EVIDENCE}13-collection.png`, fullPage: true });
