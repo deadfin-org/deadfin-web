@@ -52,7 +52,8 @@ export function LogFileView(props: { api: Api; serverUrl: string; name: string }
     }
   };
   const copy = async () => {
-    if (log.data === undefined) return;
+    // navigator.clipboard exists only in secure contexts.
+    if (log.data === undefined || !navigator.clipboard) return;
     await navigator.clipboard.writeText(log.data);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 3000);

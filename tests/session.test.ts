@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearSession,
   defaultServerFor,
   deviceId,
   loadSession,
   normalizeServerUrl,
+  randomId,
   saveSession,
   type Session,
 } from '../src/api/session';
@@ -61,6 +62,24 @@ describe('deviceId', () => {
   it('mints once and then sticks', () => {
     const a = deviceId();
     expect(deviceId()).toBe(a);
+  });
+
+  // crypto.randomUUID is absent outside secure contexts, such as a server
+  // reached by plain HTTP on the LAN.
+  it('mints without crypto.randomUUID', () => {
+    vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+    try {
+      expect(deviceId()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('randomId', () => {
+  it('formats a version 4 UUID from the random bytes', () => {
+    const source = { getRandomValues: <T extends ArrayBufferView>(array: T) => (new Uint8Array(array.buffer).fill(0xff), array) };
+    expect(randomId(source)).toBe('ffffffff-ffff-4fff-bfff-ffffffffffff');
   });
 });
 

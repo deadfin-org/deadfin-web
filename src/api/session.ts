@@ -12,10 +12,21 @@ export interface Session {
   serverName?: string;
 }
 
+// randomId returns a random RFC 4122 version 4 UUID. crypto.randomUUID exists
+// only in secure contexts (HTTPS or localhost); a server reached by plain HTTP
+// on the LAN is not one. crypto.getRandomValues works in every context.
+export function randomId(source: Pick<Crypto, 'getRandomValues'> = crypto): string {
+  const bytes = source.getRandomValues(new Uint8Array(16));
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export function deviceId(storage: Storage = localStorage): string {
   let id = storage.getItem(DEVICE_KEY);
   if (!id) {
-    id = crypto.randomUUID();
+    id = randomId();
     storage.setItem(DEVICE_KEY, id);
   }
   return id;
