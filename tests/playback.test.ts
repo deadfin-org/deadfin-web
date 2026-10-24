@@ -3,6 +3,9 @@ import { createApi } from '../src/api/client';
 import {
   buildDeviceProfile,
   directStreamUrl,
+  getPlaybackInfo,
+  needsOpening,
+  openLiveStream,
   pickSource,
   probeCapabilities,
   reportStopped,
@@ -151,5 +154,56 @@ describe('reportStopped', () => {
     });
     reportStopped({ api: createApi('http://srv', 'tok'), itemId: 'item-1' }, 42);
     await vi.waitFor(() => expect(seen).toEqual([true, false]));
+  });
+});
+
+describe('Live TV streams', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function recordRequests() {
+    const seen: Request[] = [];
+    vi.stubGlobal('fetch', async (req: Request) => {
+      seen.push(req.clone());
+      const body = req.url.includes('/LiveStreams/Open')
+        ? { MediaSource: { Id: 'ms', LiveStreamId: 'ls-1', SupportsTranscoding: true, TranscodingUrl: '/videos/ch/master.m3u8?LiveStreamId=ls-1' } }
+        : { MediaSources: [], PlaySessionId: 'ps' };
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    return seen;
+  }
+
+  it('asks PlaybackInfo to open the stream, and names an open stream again', async () => {
+    const seen = recordRequests();
+    const api = createApi('http://srv', 'tok');
+    await getPlaybackInfo(api, 'ch', 'user', {});
+    await getPlaybackInfo(api, 'ch', 'user', { liveStreamId: 'ls-1' });
+    expect(await seen[0]!.json()).toMatchObject({ AutoOpenLiveStream: true });
+    expect(await seen[1]!.json()).toMatchObject({ AutoOpenLiveStream: true, LiveStreamId: 'ls-1' });
+  });
+
+  it('needsOpening is true only for a source that requires opening and names no stream', () => {
+    expect(needsOpening({ RequiresOpening: true } as never)).toBe(true);
+    expect(needsOpening({ RequiresOpening: true, LiveStreamId: 'ls-1' } as never)).toBe(false);
+    expect(needsOpening({ RequiresOpening: false } as never)).toBe(false);
+  });
+
+  it('opens the stream with its OpenToken and returns the opened source', async () => {
+    const seen = recordRequests();
+    const api = createApi('http://srv', 'tok');
+    const opened = await openLiveStream(api, 'ch', 'user', { OpenToken: 'tok-1', RequiresOpening: true } as never, 'ps');
+    const url = new URL(seen[0]!.url);
+    expect(url.pathname).toBe('/LiveStreams/Open');
+    expect(url.searchParams.get('openToken')).toBe('tok-1');
+    expect(url.searchParams.get('playSessionId')).toBe('ps');
+    expect(await seen[0]!.json()).toMatchObject({ OpenToken: 'tok-1', ItemId: 'ch', PlaySessionId: 'ps' });
+    expect(opened.LiveStreamId).toBe('ls-1');
+    expect(needsOpening(opened)).toBe(false);
+  });
+
+  it('names the live stream in the stop report so the server closes it', async () => {
+    const seen = recordRequests();
+    reportStopped({ api: createApi('http://srv', 'tok'), itemId: 'ch', liveStreamId: 'ls-1' }, 0);
+    await vi.waitFor(() => expect(seen).toHaveLength(1));
+    expect(await seen[0]!.json()).toMatchObject({ LiveStreamId: 'ls-1' });
   });
 });

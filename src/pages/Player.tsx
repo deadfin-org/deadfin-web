@@ -5,6 +5,8 @@ import { useAuth } from '../api/AuthContext';
 import {
   directStreamUrl,
   getPlaybackInfo,
+  needsOpening,
+  openLiveStream,
   pickSource,
   reportProgress,
   reportStart,
@@ -84,11 +86,23 @@ function PlayerInner({ itemId }: { itemId: string }) {
   useEffect(() => {
     if (!session || !api) return;
     let cancelled = false;
-    getPlaybackInfo(api, itemId, session.userId, {
+    const negotiation = {
       ...request,
       startTimeTicks: startRef.current,
       mediaSourceId: source?.media.Id ?? chosen.mediaSourceId,
-    })
+      liveStreamId: source?.media.LiveStreamId,
+    };
+    getPlaybackInfo(api, itemId, session.userId, negotiation)
+      .then(async (info) => {
+        // A Live TV source the server did not open: open it, then play the
+        // opened source.
+        const first = info.MediaSources?.[0];
+        if (first && needsOpening(first)) {
+          const opened = await openLiveStream(api, itemId, session.userId, first, info.PlaySessionId, negotiation);
+          return { ...info, MediaSources: [opened] };
+        }
+        return info;
+      })
       .then((info) => {
         if (cancelled) return;
         const picked = pickSource(info);
@@ -215,6 +229,7 @@ function PlayerInner({ itemId }: { itemId: string }) {
       itemId,
       mediaSourceId: source.media.Id,
       playSessionId: source.playSessionId,
+      liveStreamId: source.media.LiveStreamId,
       playMethod: source.method,
       get audioStreamIndex() {
         return selRef.current.audio;

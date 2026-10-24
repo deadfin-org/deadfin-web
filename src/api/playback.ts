@@ -101,6 +101,8 @@ export function buildDeviceProfile(caps: Capabilities): DeviceProfile {
 export interface PlaybackRequest extends StreamRequest {
   startTimeTicks?: number;
   mediaSourceId?: string | null;
+  /** The open Live TV stream to keep using when the player negotiates again. */
+  liveStreamId?: string | null;
 }
 
 export async function getPlaybackInfo(
@@ -116,7 +118,10 @@ export async function getPlaybackInfo(
     params: { path: { itemId }, query: { userId, startTimeTicks: req.startTimeTicks ?? 0 } },
     body: {
       DeviceProfile: buildDeviceProfile(probeCapabilities()),
-      AutoOpenLiveStream: false,
+      // Playback opens a Live TV channel's stream in the same request, as
+      // jellyfin-web does; an open stream is named so it is reused.
+      AutoOpenLiveStream: true,
+      LiveStreamId: req.liveStreamId ?? undefined,
       MediaSourceId: req.mediaSourceId ?? undefined,
       AudioStreamIndex: req.audioStreamIndex,
       SubtitleStreamIndex: req.burnSubtitleIndex,
@@ -126,6 +131,51 @@ export async function getPlaybackInfo(
   });
   if (error !== undefined || !data) throw new Error('PlaybackInfo failed');
   return data;
+}
+
+/**
+ * A Live TV source that still needs opening: PlaybackInfo returned it with
+ * RequiresOpening and no LiveStreamId, so its stream URLs name no stream.
+ */
+export function needsOpening(source: MediaSource): boolean {
+  return Boolean(source.RequiresOpening && !source.LiveStreamId);
+}
+
+/**
+ * Opens the live stream of a source that needs opening (POST
+ * /LiveStreams/Open with its OpenToken) and returns the opened source, whose
+ * TranscodingUrl names the stream.
+ */
+export async function openLiveStream(
+  api: Api,
+  itemId: string,
+  userId: string,
+  source: MediaSource,
+  playSessionId: string | null | undefined,
+  req: PlaybackRequest = {},
+): Promise<MediaSource> {
+  const { data, error } = await api.POST('/LiveStreams/Open', {
+    params: {
+      query: {
+        openToken: source.OpenToken ?? undefined,
+        userId,
+        playSessionId: playSessionId ?? undefined,
+        itemId,
+      },
+    },
+    body: {
+      OpenToken: source.OpenToken ?? undefined,
+      UserId: userId,
+      PlaySessionId: playSessionId ?? undefined,
+      ItemId: itemId,
+      StartTimeTicks: req.startTimeTicks ?? 0,
+      AudioStreamIndex: req.audioStreamIndex,
+      SubtitleStreamIndex: req.burnSubtitleIndex,
+      DeviceProfile: buildDeviceProfile(probeCapabilities()),
+    },
+  });
+  if (error !== undefined || !data?.MediaSource) throw new Error('LiveStreams/Open failed');
+  return data.MediaSource;
 }
 
 export type PlayMethod = 'DirectPlay' | 'Transcode';
@@ -179,6 +229,7 @@ interface ReportCtx {
   itemId: string;
   mediaSourceId?: string | null;
   playSessionId?: string | null;
+  liveStreamId?: string | null;
   playMethod?: PlayMethod;
   audioStreamIndex?: number;
   subtitleStreamIndex?: number | null;
@@ -188,6 +239,8 @@ const common = (ctx: ReportCtx, positionTicks: number) => ({
   ItemId: ctx.itemId,
   MediaSourceId: ctx.mediaSourceId ?? undefined,
   PlaySessionId: ctx.playSessionId ?? undefined,
+  // The server closes the live stream when the stop report names it.
+  LiveStreamId: ctx.liveStreamId ?? undefined,
   PositionTicks: Math.max(0, Math.round(positionTicks)),
   PlayMethod: ctx.playMethod ?? 'DirectPlay',
   AudioStreamIndex: ctx.audioStreamIndex,
