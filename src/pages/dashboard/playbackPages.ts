@@ -3,6 +3,8 @@
  * they load as one lazy chunk and stay out of the main bundle.
  */
 export { Networking } from './Networking';
+export { ChannelListEdit } from './livetv/ChannelListEdit';
+export { ChannelLists } from './livetv/ChannelLists';
 export { GuideProvider } from './livetv/GuideProvider';
 export { LiveTv } from './livetv/LiveTv';
 export { TunerEdit } from './livetv/TunerEdit';

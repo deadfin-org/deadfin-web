@@ -38,6 +38,8 @@ export const dashboardRoutes: { path: string; element: ReactElement }[] = [
   { path: 'livetv', element: playbackPage('LiveTv') },
   { path: 'livetv/tuner', element: playbackPage('TunerEdit') },
   { path: 'livetv/guide', element: playbackPage('GuideProvider') },
+  { path: 'livetv/lists', element: playbackPage('ChannelLists') },
+  { path: 'livetv/lists/:listId', element: playbackPage('ChannelListEdit') },
   // #86: Devices, Activity, API Keys, Logs.
   { path: 'devices', element: lazyPage(() => import('../pages/dashboard/Devices').then((m) => m.Devices)) },
   { path: 'activity', element: lazyPage(() => import('../pages/dashboard/Activity').then((m) => m.Activity)) },

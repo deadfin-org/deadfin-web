@@ -36,6 +36,8 @@ export const DASHBOARD_NAV: DashboardNavSection[] = [
     title: 'Live TV',
     entries: [
       { path: 'livetv', label: 'Live TV' },
+      // Deadfin: playlists of channels that limit a user's Live TV (D-94, D-105).
+      { path: 'livetv/lists', label: 'Channel Lists' },
       { path: 'livetv/recordings', label: 'DVR' },
     ],
   },

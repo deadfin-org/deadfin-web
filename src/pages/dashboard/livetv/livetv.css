@@ -217,3 +217,26 @@
   background: var(--abyss-1);
   box-shadow: var(--shadow-raise);
 }
+
+.channel-list-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.channel-list-filters input,
+.channel-list-filters select {
+  flex: 1 1 14em;
+  min-width: 0;
+}
+
+.channel-list-group {
+  display: block;
+  margin: 0;
+}
+
+.channel-list-picker {
+  max-height: 50vh;
+  overflow-y: auto;
+}

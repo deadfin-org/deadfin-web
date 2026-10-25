@@ -18,7 +18,9 @@ import { ConfirmDialog } from '../../ui/Modal';
 import { CheckboxField, Field, FormSection, SaveBar } from '../../ui/Form';
 import { PageHeader } from '../../ui/PageHeader';
 import { Tabs } from '../../ui/Tabs';
+import { applyShareChanges, shareChanges } from '../../api/admin/channelLists';
 import { UserAccessTab } from './UserAccess';
+import { ChannelListChecks, useListShares } from './UserChannelLists';
 import { UserParentalTab } from './UserParental';
 import './dashboard.css';
 
@@ -77,6 +79,9 @@ function UserProfileTab({ user }: { user: UserDto }) {
     ...user.Policy!,
     EnableRemoteAccess: user.Policy?.EnableRemoteAccess ?? true,
   });
+  // Lists to share with the user; null until the admin changes a box.
+  const [wantedLists, setWantedLists] = useState<Set<string> | null>(null);
+  const shares = useListShares(user.Id!, !!policy.EnableLiveTvAccess && !policy.IsAdministrator);
   const [bitrate, setBitrate] = useState(
     policy.RemoteClientBitrateLimit ? String(policy.RemoteClientBitrateLimit / 1e6) : '',
   );
@@ -89,6 +94,9 @@ function UserProfileTab({ user }: { user: UserDto }) {
       };
       await updateUser(api!, { ...user, Name: name.trim() });
       await updatePolicy(api!, user.Id!, next);
+      if (wantedLists && shares.data) {
+        await applyShareChanges(api!, user.Id!, shareChanges(shares.data.current, wantedLists, shares.data.open));
+      }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin'] });
@@ -166,6 +174,28 @@ function UserProfileTab({ user }: { user: UserDto }) {
       <FormSection title="Feature access">
         {check('EnableLiveTvAccess', 'Allow Live TV access')}
         {check('EnableLiveTvManagement', 'Allow Live TV recording management')}
+        {policy.EnableLiveTvAccess &&
+          (policy.IsAdministrator ? (
+            <p className="form-help">Administrators see all Live TV channels.</p>
+          ) : (
+            <>
+              {check(
+                'LimitLiveTvToSharedLists',
+                'Show only the channels in the checked lists',
+                'Clear this box to show all Live TV channels to this user.',
+              )}
+              {policy.LimitLiveTvToSharedLists && (
+                <ChannelListChecks
+                  shares={shares}
+                  wanted={wantedLists ?? shares.data?.current ?? new Set()}
+                  onChange={(w) => {
+                    setWantedLists(w);
+                    save.reset();
+                  }}
+                />
+              )}
+            </>
+          ))}
       </FormSection>
       <FormSection title="Media playback">
         {check('EnableMediaPlayback', 'Allow media playback')}

@@ -3,7 +3,12 @@ import type { components } from '../schema';
 import { check, optional } from './check';
 
 export type UserDto = components['schemas']['UserDto'];
-export type UserPolicy = components['schemas']['UserPolicy'];
+/**
+ * The user policy with Deadfin's own field: `LimitLiveTvToSharedLists`
+ * (D-105) shows the user only the Live TV channels of the lists shared with
+ * them. Absent is false; a save that omits it keeps the stored value.
+ */
+export type UserPolicy = components['schemas']['UserPolicy'] & { LimitLiveTvToSharedLists?: boolean };
 export type AccessSchedule = components['schemas']['AccessSchedule'];
 export type ParentalRating = components['schemas']['ParentalRating'];
 export type UnratedItem = components['schemas']['UnratedItem'];

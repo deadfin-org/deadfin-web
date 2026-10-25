@@ -29,11 +29,17 @@ export function CheckboxField(props: {
   checked: boolean;
   onChange: (on: boolean) => void;
   help?: ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <div className="form-field">
       <label className="form-check">
-        <input type="checkbox" checked={props.checked} onChange={(e) => props.onChange(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={props.checked}
+          disabled={props.disabled}
+          onChange={(e) => props.onChange(e.target.checked)}
+        />
         {props.label}
       </label>
       {props.help && <p className="form-help">{props.help}</p>}
