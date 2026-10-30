@@ -8,10 +8,12 @@ export interface ListState {
   descending: boolean;
   filters: ListFilters;
   letter: string | null;
+  /** Live TV channels: the channel list (playlist) id the grid shows, in list order. */
+  list: string | null;
 }
 
 /** URL keys that belong to list state; a tab change clears them. */
-export const LIST_KEYS = ['sortBy', 'sortOrder', 'filters', 'features', 'video', 'videoTypes', 'seriesStatus', 'genres', 'ratings', 'tags', 'years', 'letter'];
+export const LIST_KEYS = ['sortBy', 'sortOrder', 'filters', 'features', 'video', 'videoTypes', 'seriesStatus', 'genres', 'ratings', 'tags', 'years', 'letter', 'list'];
 
 // Names can hold commas ("Action, Adventure"), so value lists use "|" as the server does.
 const split = (v: string | null, sep = '|') => (v ? v.split(sep).filter(Boolean) : []);
@@ -22,6 +24,7 @@ export function readListState(params: URLSearchParams, sorts: SortSet): ListStat
     sortBy: sortBy.length ? sortBy : SORTS[sorts][0]!.by,
     descending: params.get('sortOrder') === 'Descending',
     letter: params.get('letter'),
+    list: params.get('list'),
     filters: {
       status: split(params.get('filters'), ',') as ListFilters['status'],
       features: split(params.get('features'), ',') as ListFilters['features'],
@@ -43,6 +46,7 @@ export function writeListState(params: URLSearchParams, s: ListState, sorts: Sor
   put('sortBy', isDefault ? '' : s.sortBy.join(','));
   put('sortOrder', s.descending ? 'Descending' : '');
   put('letter', s.letter ?? '');
+  put('list', s.list ?? '');
   const f = s.filters;
   put('filters', f.status.join(','));
   put('features', f.features.join(','));
@@ -68,4 +72,5 @@ export const DEFAULT_STATE = (sorts: SortSet): ListState => ({
   descending: false,
   filters: NO_FILTERS,
   letter: null,
+  list: null,
 });

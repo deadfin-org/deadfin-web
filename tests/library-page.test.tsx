@@ -30,10 +30,16 @@ function stubServer() {
       case '/System/Info/Public':
         return json({ ServerName: 'Test Server', Version: '12.0.0' });
       case '/Items':
+        if (url.searchParams.get('includeItemTypes') === 'Playlist')
+          return json({ Items: [{ Id: 'pl1', Name: 'Live TV · Favorites', Type: 'Playlist' }, { Id: 'pl2', Name: 'Road trip', Type: 'Playlist' }] });
         return json({
           Items: [{ Id: 'm1', Name: 'Voyage', Type: 'Movie' }],
           TotalRecordCount: 1,
         });
+      case '/Playlists/pl1/Items':
+        return json({ Items: [{ Id: 'c1', Name: 'WSB', Type: 'TvChannel' }], TotalRecordCount: 91 });
+      case '/Playlists/pl2/Items':
+        return json({ Items: [{ Id: 's1', Name: 'Song', Type: 'Audio' }], TotalRecordCount: 12 });
       case '/Genres':
         return json({ Items: [{ Id: 'g1', Name: 'Drama', Type: 'Genre' }], TotalRecordCount: 1 });
       default:
@@ -115,9 +121,27 @@ describe('library page', () => {
   it('Live TV opens on Channels with the Live TV view', async () => {
     mount('/livetv?collectionType=livetv');
     expect(await screen.findByText('Voyage')).toBeTruthy();
-    const items = seen.find((u) => u.pathname === '/Items')!;
+    const items = seen.find((u) => u.pathname === '/Items' && u.searchParams.get('includeItemTypes') !== 'Playlist')!;
     expect(items.searchParams.get('parentId')).toBe('lt');
     expect(items.searchParams.get('recursive')).toBe('false');
+  });
+
+  it('Live TV Channels: List limits the grid to a channel list, in list order', async () => {
+    mount('/livetv?collectionType=livetv&tags=US%20%2F%20News');
+    fireEvent.click(await screen.findByRole('button', { name: 'List: All channels' }));
+    // Only playlists of channels are lists; "Live TV · " is dropped from the label.
+    expect(screen.getAllByRole('menuitemradio').map((b) => b.textContent)).toEqual(['All channels', 'Favorites']);
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Favorites' }));
+    await waitFor(() => expect(where()).toContain('list=pl1'));
+    await waitFor(() => expect(seen.some((u) => u.pathname === '/Items' && u.searchParams.get('parentId') === 'pl1')).toBe(true));
+    const items = seen.filter((u) => u.pathname === '/Items' && u.searchParams.get('parentId') === 'pl1').at(-1)!;
+    expect(items.searchParams.get('recursive')).toBe('false');
+    // Other filters still apply inside the list.
+    expect(items.searchParams.get('tags')).toBe('US / News');
+    expect(screen.getByRole('button', { name: 'List: Favorites' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'List: Favorites' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'All channels' }));
+    await waitFor(() => expect(where()).not.toContain('list='));
   });
 
   it('old /library paths redirect to the jellyfin-web path, or to the list', async () => {

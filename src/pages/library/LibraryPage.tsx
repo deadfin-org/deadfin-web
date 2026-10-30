@@ -135,8 +135,10 @@ function ItemsTab({ tab, ctx }: { tab: LibraryTab; ctx: Ctx }) {
   const [state, setState] = useListState(sorts);
   // Live TV channels keep the plain by-name children query: the fast path for 40k channels.
   const channels = tab.kind === 'channels';
+  // A channel list's children are its channels in list order; filters still apply (D-94).
+  const listCtx = channels && state.list ? { ...ctx, parentId: state.list } : ctx;
   const list = useStreamedList(['library', ctx.userId, ctx.parentId, tab.index, tab.source ?? 'items', tab.itemTypes, state], (start, limit) =>
-    fetchListPage(ctx.api, tab.source ?? 'items', listQuery(ctx, tab, state, start, limit)),
+    fetchListPage(ctx.api, tab.source ?? 'items', listQuery(listCtx, tab, state, start, limit)),
   );
   return (
     <div className="library-list">
@@ -149,6 +151,7 @@ function ItemsTab({ tab, ctx }: { tab: LibraryTab; ctx: Ctx }) {
         alphabet={tab.alphabet}
         parentId={ctx.parentId}
         itemTypes={tab.itemTypes}
+        channelLists={channels}
       />
       <StreamedGrid list={list} empty={tab.empty} render={(item) => <ItemCard serverUrl={ctx.serverUrl} item={item} />} />
     </div>
@@ -214,7 +217,7 @@ function GenresTab({ tab, ctx }: { tab: LibraryTab; ctx: Ctx }) {
   );
 }
 
-const NO_STATE: ListState = { sortBy: ['SortName'], descending: false, filters: NO_FILTERS, letter: null };
+const NO_STATE: ListState = { sortBy: ['SortName'], descending: false, filters: NO_FILTERS, letter: null, list: null };
 
 function GenreRow({ genre, tab, ctx }: { genre: BaseItem; tab: LibraryTab; ctx: Ctx }) {
   const ref = useRef<HTMLDivElement>(null);

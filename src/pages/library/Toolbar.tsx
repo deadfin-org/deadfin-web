@@ -14,6 +14,7 @@ import {
   type VideoBasic,
   type VideoType,
 } from '../../api/library';
+import { fetchChannelLists, shortListName } from '../../api/admin/channelLists';
 import { SORTS, type SortSet } from '../../api/sorts';
 import type { FilterGroup } from './views';
 import type { ListState } from './listState';
@@ -28,6 +29,8 @@ export function Toolbar(props: {
   alphabet?: boolean;
   parentId?: string | null;
   itemTypes?: ItemKind[];
+  /** Live TV channels: offer the channel lists the user can see. */
+  channelLists?: boolean;
 }) {
   const { state, onChange } = props;
   return (
@@ -37,6 +40,7 @@ export function Toolbar(props: {
           {props.total === undefined ? '· · ·' : countLabel(props.total)}
         </span>
         {props.sorts && <SortMenu sorts={props.sorts} state={state} onChange={onChange} />}
+        {props.channelLists && <ChannelListMenu state={state} onChange={onChange} />}
         {props.filters && props.filters.length > 0 && (
           <FilterButton
             groups={props.filters}
@@ -110,6 +114,59 @@ function SortMenu(props: { sorts: SortSet; state: ListState; onChange: (s: ListS
               </li>
             );
           })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Live TV channel lists (playlists of channels, D-94): picking one shows
+ * its channels in list order. Hidden when the user can see no list.
+ */
+function ChannelListMenu(props: { state: ListState; onChange: (s: ListState) => void }) {
+  const { session, api } = useAuth();
+  const [open, setOpen] = useState(false);
+  const ref = useDismiss(open, () => setOpen(false));
+  const lists = useQuery({
+    queryKey: ['channel-lists', session?.userId],
+    enabled: !!api && !!session,
+    staleTime: 5 * 60_000,
+    queryFn: () => fetchChannelLists(api!, session!.userId),
+  });
+  const options = (lists.data ?? []).filter((l) => l.Count > 0);
+  if (options.length === 0 && !props.state.list) return null;
+  const current = options.find((l) => l.Id === props.state.list);
+  const pick = (list: string | null) => {
+    props.onChange({ ...props.state, list });
+    setOpen(false);
+  };
+  return (
+    <div className="popover-anchor" ref={ref}>
+      <button
+        type="button"
+        className="library-order readout"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        List: {current ? shortListName(current.Name) : props.state.list ? '…' : 'All channels'}
+      </button>
+      {open && (
+        <ul className="popover-menu" role="menu" aria-label="Channel list">
+          {[{ Id: null, Name: 'All channels' }, ...options].map((l) => (
+            <li key={l.Id ?? ''} role="none">
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={(props.state.list ?? null) === l.Id}
+                className="popover-item"
+                onClick={() => pick(l.Id)}
+              >
+                <span>{l.Id ? shortListName(l.Name) : l.Name}</span>
+              </button>
+            </li>
+          ))}
         </ul>
       )}
     </div>

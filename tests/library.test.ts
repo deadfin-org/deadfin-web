@@ -87,11 +87,12 @@ describe('itemsQuery', () => {
 });
 
 describe('list state in the URL', () => {
-  it('round-trips sort, order, letter and filters', () => {
+  it('round-trips sort, order, letter, channel list and filters', () => {
     const s = {
       sortBy: SORTS.movies[4]!.by,
       descending: true,
       letter: 'C',
+      list: 'pl1',
       filters: { ...NO_FILTERS, status: ['IsUnplayed' as const], genres: ['Action, Adventure', 'Drama'], years: [2001, 1999] },
     };
     const p = writeListState(new URLSearchParams('tab=0&topParentId=v'), s, 'movies');
