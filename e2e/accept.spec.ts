@@ -1108,10 +1108,7 @@ test('dashboard home: server, devices, activity, paths', async ({ page }) => {
   await expect(server).toContainText('12.0.0');
   // This browser's own session shows under Devices; sign-ins show under Activity.
   await expect(page.getByTestId('session-card').first()).toBeVisible({ timeout: 15_000 });
-  // Deadfin (v0.3.0-rc.6) writes no activity log entries, so its widget stays empty.
-  if (process.env.HARNESS_PRODUCT !== 'Deadfin')
-    await expect(page.getByTestId('dashboard-activity').locator('li').first()).toBeVisible({ timeout: 15_000 });
-  else await expect(page.getByTestId('dashboard-activity')).toContainText('No activity in the last day.');
+  await expect(page.getByTestId('dashboard-activity').locator('li').first()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('dashboard-paths')).toContainText('Transcodes');
   await expect(page.getByRole('button', { name: 'Scan All Libraries' })).toBeEnabled({ timeout: 15_000 });
   // Restart asks first; Cancel leaves the server running.
