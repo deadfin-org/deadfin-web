@@ -140,7 +140,8 @@ describe('library tabs', () => {
     }
     const live = libraryType('/livetv')!;
     expect(pickTab(live, '2').label).toBe('Channels');
-    expect(pickTab(live, null).label).toBe('Channels');
+    expect(pickTab(live, null).label).toBe('Programs');
+    expect(pickTab(live, '1').label).toBe('Guide');
     expect(pickTab(libraryType('/tv')!, '5').label).toBe('Episodes');
     expect(pickTab(libraryType('/tv')!, '99').label).toBe('Shows');
   });

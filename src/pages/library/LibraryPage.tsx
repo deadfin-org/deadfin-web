@@ -20,6 +20,8 @@ import { LIST_KEYS, useListState, type ListState } from './listState';
 import { Shelf } from './Shelf';
 import { StreamedGrid, useStreamedList } from './StreamedGrid';
 import { Toolbar } from './Toolbar';
+import { GuideTab } from '../livetv/Guide';
+import { ProgramsTab } from '../livetv/Programs';
 import { libraryType, pickTab, type LibraryTab, type LibraryType, type SuggestionSection } from './views';
 import '../home.css';
 import '../library.css';
@@ -108,6 +110,10 @@ function TabContent(props: { type: LibraryType; tab: LibraryTab; ctx: Ctx }) {
       return <StudiosTab tab={tab} ctx={ctx} />;
     case 'upcoming':
       return <UpcomingTab ctx={ctx} />;
+    case 'programs':
+      return <ProgramsTab ctx={ctx} />;
+    case 'guide':
+      return <GuideTab ctx={ctx} />;
   }
 }
 

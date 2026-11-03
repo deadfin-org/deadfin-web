@@ -26,6 +26,10 @@ native Jellyfin app.
 ### Keyboard
 
 - Tab reaches links, buttons and form fields. Enter opens a card.
+- The Live TV guide is a `grid` with one cell in the Tab order. Arrow keys
+  move between programmes (Up and Down keep the time), Home and End go to
+  the ends of a row, and Enter opens a programme or plays a channel. Each
+  programme's name includes its episode, air time, badge and "On now".
 - Player controls (play/pause, audio and subtitles, fullscreen) are buttons
   with accessible names.
 - The audio and subtitle menu is a fieldset of radio buttons. Its button

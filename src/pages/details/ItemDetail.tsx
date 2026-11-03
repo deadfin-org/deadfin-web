@@ -22,6 +22,7 @@ import {
   splitPeople,
 } from '../../api/items';
 import type { BaseItem } from '../../api/library';
+import { isAiring } from '../../api/programs';
 import { playUrl } from '../../api/tv';
 import { Poster } from '../../components/Poster';
 import { ItemCard } from '../../components/ItemCard';
@@ -215,8 +216,12 @@ function Buttons(props: {
   const queryClient = useQueryClient();
   const user = useCurrentUser();
   const tracks = trackChoice(item, props.sel);
-  const resumable = isPlayable(item) && (item.UserData?.PlaybackPositionTicks ?? 0) > 0;
-  const canPlay = isPlayable(item) || (playsChildren(item) && (item.ChildCount ?? item.RecursiveItemCount ?? 1) > 0);
+  // A guide programme plays its channel while it is on (jellyfin-web `playbackManager`).
+  const program = item.Type === 'Program';
+  const resumable = !program && isPlayable(item) && (item.UserData?.PlaybackPositionTicks ?? 0) > 0;
+  const canPlay = program
+    ? !!item.ChannelId && isAiring(item)
+    : isPlayable(item) || (playsChildren(item) && (item.ChildCount ?? item.RecursiveItemCount ?? 1) > 0);
   const shuffle = item.IsFolder && item.Type !== 'Person' && item.CollectionType !== 'livetv';
   const trailer = (item.LocalTrailerCount ?? 0) > 0 || (item.RemoteTrailers?.length ?? 0) > 0;
   const played = item.UserData?.Played ?? false;
@@ -251,7 +256,8 @@ function Buttons(props: {
   };
 
   const play = (fromStart: boolean) => {
-    if (isPlayable(item)) navigate(videoUrl(itemId, fromStart ? 0 : item.UserData?.PlaybackPositionTicks, tracks));
+    if (program) navigate(videoUrl(item.ChannelId ?? ''));
+    else if (isPlayable(item)) navigate(videoUrl(itemId, fromStart ? 0 : item.UserData?.PlaybackPositionTicks, tracks));
     else void go(() => playTarget(api, userId, item));
   };
 

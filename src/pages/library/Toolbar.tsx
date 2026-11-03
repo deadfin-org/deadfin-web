@@ -31,6 +31,8 @@ export function Toolbar(props: {
   itemTypes?: ItemKind[];
   /** Live TV channels: offer the channel lists the user can see. */
   channelLists?: boolean;
+  /** More controls after the menus (the guide's day picker). */
+  children?: ReactNode;
 }) {
   const { state, onChange } = props;
   return (
@@ -50,6 +52,7 @@ export function Toolbar(props: {
             itemTypes={props.itemTypes}
           />
         )}
+        {props.children}
       </div>
       {props.alphabet && <AlphabetPicker letter={state.letter} onPick={(letter) => onChange({ ...state, letter })} />}
     </>

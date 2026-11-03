@@ -13,7 +13,7 @@ export interface ListState {
 }
 
 /** URL keys that belong to list state; a tab change clears them. */
-export const LIST_KEYS = ['sortBy', 'sortOrder', 'filters', 'features', 'video', 'videoTypes', 'seriesStatus', 'genres', 'ratings', 'tags', 'years', 'letter', 'list'];
+export const LIST_KEYS = ['sortBy', 'sortOrder', 'filters', 'features', 'video', 'videoTypes', 'seriesStatus', 'genres', 'ratings', 'tags', 'years', 'letter', 'list', 'day'];
 
 // Names can hold commas ("Action, Adventure"), so value lists use "|" as the server does.
 const split = (v: string | null, sep = '|') => (v ? v.split(sep).filter(Boolean) : []);

@@ -257,3 +257,110 @@ export async function startTask(api: Api, taskId: string): Promise<void> {
   const { error } = await api.POST('/ScheduledTasks/Running/{taskId}', { params: { path: { taskId } } });
   if (error !== undefined) throw new Error('Starting the task failed.');
 }
+
+/* ---- Viewing: guide and programmes (deadfin-web#91) ---- */
+
+type BaseItem = components['schemas']['BaseItemDto'];
+
+/** GET /LiveTv/GuideInfo: the first and last date the guide has programmes for. */
+export async function fetchGuideInfo(api: Api): Promise<{ start: Date | null; end: Date | null }> {
+  const { data, error } = await api.GET('/LiveTv/GuideInfo');
+  if (error !== undefined) throw new Error('Loading the guide failed.');
+  const date = (v?: string | null) => {
+    const d = v ? new Date(v) : null;
+    return d && !Number.isNaN(d.getTime()) && d.getFullYear() > 1 ? d : null;
+  };
+  return { start: date(data?.StartDate), end: date(data?.EndDate) };
+}
+
+/**
+ * One page of guide channels, as jellyfin-web's guide asks for them:
+ * favorites first, no current programme, no user data, the logo only.
+ */
+export async function fetchGuideChannels(
+  api: Api,
+  userId: string,
+  startIndex: number,
+  limit: number,
+): Promise<{ items: BaseItem[]; total: number; startIndex: number }> {
+  const { data, error } = await api.GET('/LiveTv/Channels', {
+    params: {
+      query: {
+        userId,
+        startIndex,
+        limit,
+        enableFavoriteSorting: true,
+        addCurrentProgram: false,
+        enableUserData: false,
+        imageTypeLimit: 1,
+        enableImageTypes: ['Primary'],
+      },
+    },
+  });
+  if (error !== undefined) throw new Error('Loading the channels failed.');
+  const items = data?.Items ?? [];
+  return { items, total: data?.TotalRecordCount ?? startIndex + items.length, startIndex };
+}
+
+/**
+ * GET /LiveTv/Programs: the programmes of these channels that overlap
+ * [from, to), sorted by start. As jellyfin-web, a second is trimmed off each
+ * end so a programme that ends or starts exactly at the edge stays out.
+ */
+export async function fetchGuidePrograms(api: Api, userId: string, channelIds: string[], from: Date, to: Date): Promise<BaseItem[]> {
+  if (channelIds.length === 0) return [];
+  const { data, error } = await api.GET('/LiveTv/Programs', {
+    params: {
+      query: {
+        userId,
+        channelIds,
+        minEndDate: new Date(from.getTime() + 1000).toISOString(),
+        maxStartDate: new Date(to.getTime() - 1000).toISOString(),
+        sortBy: ['StartDate'],
+        enableImages: false,
+        enableTotalRecordCount: false,
+        enableUserData: false,
+      },
+    },
+  });
+  if (error !== undefined) throw new Error('Loading the programs failed.');
+  return data?.Items ?? [];
+}
+
+/** A row of the Programs tab, as jellyfin-web `getProgramSections`. */
+export interface ProgramSection {
+  key: 'onNow' | 'shows' | 'movies' | 'sports' | 'kids' | 'news';
+  title: string;
+  query: { isAiring?: boolean; hasAired?: boolean; isMovie?: boolean; isSeries?: boolean; isSports?: boolean; isKids?: boolean; isNews?: boolean };
+}
+
+export const PROGRAM_SECTIONS: ProgramSection[] = [
+  { key: 'onNow', title: 'On Now', query: { isAiring: true } },
+  { key: 'shows', title: 'Shows', query: { hasAired: false, isMovie: false, isSports: false, isKids: false, isNews: false, isSeries: true } },
+  { key: 'movies', title: 'Movies', query: { hasAired: false, isMovie: true } },
+  { key: 'sports', title: 'Sports', query: { hasAired: false, isSports: true } },
+  { key: 'kids', title: 'For Kids', query: { hasAired: false, isKids: true } },
+  { key: 'news', title: 'News', query: { hasAired: false, isNews: true } },
+];
+
+/**
+ * One Programs row: 12 programmes with their channel's name and logo. On
+ * Now asks /LiveTv/Programs/Recommended, the others /LiveTv/Programs.
+ */
+export async function fetchProgramSection(api: Api, userId: string, section: ProgramSection): Promise<BaseItem[]> {
+  const common = {
+    userId,
+    limit: 12,
+    imageTypeLimit: 1,
+    enableImageTypes: ['Primary' as const, 'Thumb' as const, 'Backdrop' as const],
+    enableTotalRecordCount: false,
+    fields: ['ChannelInfo' as const, 'ChannelImage' as const, 'PrimaryImageAspectRatio' as const],
+    ...section.query,
+  };
+  const { data, error } =
+    section.key === 'onNow'
+      ? await api.GET('/LiveTv/Programs/Recommended', { params: { query: common } })
+      : await api.GET('/LiveTv/Programs', { params: { query: common } });
+  if (error !== undefined) throw new Error(`${section.title} failed`);
+  return data?.Items ?? [];
+}

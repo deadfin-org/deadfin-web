@@ -118,8 +118,8 @@ describe('library page', () => {
     expect(await screen.findByText('Drama')).toBeTruthy();
   });
 
-  it('Live TV opens on Channels with the Live TV view', async () => {
-    mount('/livetv?collectionType=livetv');
+  it('Live TV Channels lists the Live TV view', async () => {
+    mount('/livetv?collectionType=livetv&tab=2');
     expect(await screen.findByText('Voyage')).toBeTruthy();
     const items = seen.find((u) => u.pathname === '/Items' && u.searchParams.get('includeItemTypes') !== 'Playlist')!;
     expect(items.searchParams.get('parentId')).toBe('lt');
@@ -127,7 +127,7 @@ describe('library page', () => {
   });
 
   it('Live TV Channels: List limits the grid to a channel list, in list order', async () => {
-    mount('/livetv?collectionType=livetv&tags=US%20%2F%20News');
+    mount('/livetv?collectionType=livetv&tab=2&tags=US%20%2F%20News');
     fireEvent.click(await screen.findByRole('button', { name: 'List: All channels' }));
     // Only playlists of channels are lists; "Live TV · " is dropped from the label.
     expect(screen.getAllByRole('menuitemradio').map((b) => b.textContent)).toEqual(['All channels', 'Favorites']);

@@ -13,6 +13,17 @@ Release assets: `ghcr.io/deadfin-org/deadfin-web:<tag>` and
 
 ## [Unreleased]
 
+### Added
+
+- **Live TV Programs and Guide tabs** (deadfin-web#91), as jellyfin-web
+  12.0. Programs shows On Now and upcoming Shows, Movies, Sports, For Kids
+  and News. Guide is a time grid of channels and programmes for today or a
+  later guide day, with a now line, a Now button and the channel-list
+  picker. Programmes show their season, episode, episode title and a Live,
+  Premiere or New badge when the guide has them. A programme opens its
+  details, where Play starts its channel while it airs; a channel plays.
+  Recordings, Schedule and Series wait for the server's DVR.
+
 ## [0.3.0-rc.4]
 
 Release candidate for the v0.3.0 alpha. It fixes an access-token leak to

@@ -1,0 +1,288 @@
+/* Live TV viewing: the guide grid and programme cards (deadfin-web#91). */
+
+.guide {
+  --guide-slot: 180px;
+  --guide-channel: 200px;
+  --guide-row: 64px;
+}
+
+@media (max-width: 700px) {
+  .guide {
+    --guide-slot: 140px;
+    --guide-channel: 120px;
+  }
+}
+
+.guide-day {
+  background: var(--abyss-2);
+  color: var(--bone);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  padding: 6px 10px;
+  font: inherit;
+}
+
+.guide-scroll {
+  position: relative;
+  overflow: auto;
+  max-height: calc(100vh - 220px);
+  min-height: 320px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--abyss);
+  overscroll-behavior: contain;
+}
+
+.guide-grid {
+  position: relative;
+  width: calc(var(--guide-channel) + var(--guide-slots) * var(--guide-slot));
+}
+
+.guide-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  background: var(--abyss-1);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.guide-corner {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  flex: none;
+  width: var(--guide-channel);
+  padding: 10px 12px;
+  background: var(--abyss-1);
+  border-right: 1px solid var(--hairline);
+  color: var(--bone);
+}
+
+.guide-times {
+  display: flex;
+}
+
+.guide-time {
+  flex: none;
+  width: var(--guide-slot);
+  padding: 10px 8px;
+  border-left: 1px solid var(--hairline);
+}
+
+.guide-row {
+  display: flex;
+  height: var(--guide-row);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.guide-channel {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  flex: none;
+  width: var(--guide-channel);
+  background: var(--abyss-1);
+  border-right: 1px solid var(--hairline);
+}
+
+.guide-channel-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+  padding: 0 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.guide-channel-link:hover .guide-channel-name {
+  color: var(--biolum);
+}
+
+.guide-logo {
+  flex: none;
+  width: 44px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 4px;
+  background: var(--abyss-2);
+}
+
+.guide-channel-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.guide-channel-name,
+.guide-program-name,
+.guide-program-episode {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.guide-channel-name {
+  font-size: 14px;
+}
+
+.guide-programs {
+  position: relative;
+  flex: none;
+  width: calc(var(--guide-slots) * var(--guide-slot));
+}
+
+.guide-cell {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  padding-right: 3px;
+}
+
+.guide-program {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  height: 100%;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  background: var(--abyss-1);
+  border: 1px solid var(--hairline);
+  color: var(--bone);
+  text-decoration: none;
+  overflow: hidden;
+  font-size: 14px;
+}
+
+.guide-program:hover {
+  border-color: rgba(63, 224, 197, 0.5);
+}
+
+.guide-program.is-now {
+  background: var(--abyss-2);
+  border-color: rgba(63, 224, 197, 0.35);
+}
+
+.guide-program-episode {
+  color: var(--steel);
+  font-size: 12px;
+}
+
+.guide-empty {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+}
+
+.guide-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--guide-channel) + var(--guide-now) * var(--guide-slots) * var(--guide-slot));
+  z-index: 1;
+  width: 2px;
+  background: var(--biolum);
+  box-shadow: 0 0 10px rgba(63, 224, 197, 0.5);
+  pointer-events: none;
+}
+
+.program-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  color: var(--abyss);
+  background: var(--biolum);
+}
+
+.program-badge.is-live,
+.program-badge.is-premiere {
+  background: var(--alarm);
+}
+
+.program-badge.is-overlay {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  margin: 0;
+}
+
+/* The Programs tab: rows spaced as the home page's. */
+.programs {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+/* Programme cards: landscape, as jellyfin-web's program rows. */
+.program-row {
+  grid-auto-columns: 240px;
+  min-height: 0;
+  margin: 0;
+  padding: 0 0 6px;
+  list-style: none;
+}
+
+.program-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--r-md);
+  min-width: 0;
+}
+
+.program-frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  margin-bottom: 4px;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--abyss-1);
+  border: 1px solid var(--hairline);
+  display: grid;
+  place-items: center;
+}
+
+.program-card:hover .program-frame {
+  border-color: rgba(63, 224, 197, 0.5);
+}
+
+.program-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.program-logo {
+  max-width: 50%;
+  max-height: 50%;
+  object-fit: contain;
+}
+
+.program-title {
+  font-weight: 700;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.program-meta {
+  color: var(--steel);
+  font-size: 13px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

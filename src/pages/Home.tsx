@@ -215,6 +215,12 @@ function LiveTvSection({ ctx, views }: { ctx: Ctx; views?: BaseItem[] }) {
         testId="live-tv-section"
         extra={
           <div className="library-buttons">
+            <Link to={libraryUrl(view)} className="library-order readout">
+              Programs
+            </Link>
+            <Link to={libraryUrl(view, { tab: 1 })} className="library-order readout">
+              Guide
+            </Link>
             <Link to={libraryUrl(view, { tab: 2 })} className="library-order readout">
               Channels
             </Link>

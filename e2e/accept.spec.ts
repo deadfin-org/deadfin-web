@@ -654,6 +654,103 @@ test('streamed list: 40,000 items show at once, thumbnails within 1 s', async ({
   await expect.poll(() => page.getByTestId('poster').count(), { timeout: 3_000 }).toBeGreaterThan(before);
 });
 
+test('live tv guide and programs: a time grid of channels, programmes by category, keyboard moves', async ({ page }) => {
+  // The guide answers are synthetic (page.route): the harness has no tuner
+  // stream, and no test may reach a real IPTV provider. This times and
+  // walks the client against jellyfin-web 12.0's guide requests.
+  const HOUR = 3_600_000;
+  const now = Date.now();
+  const at = (h: number) => new Date(now + h * HOUR).toISOString();
+  const channels = Array.from({ length: 40 }, (_, i) => ({
+    Id: `gc${i}`,
+    Name: `Trench ${i + 1}`,
+    Type: 'TvChannel',
+    ChannelNumber: String(i + 1),
+    ImageTags: { Primary: 't' },
+  }));
+  const programsOf = (id: string) => [
+    { Id: `${id}-a`, Name: id === 'gc0' ? 'Seinfeld' : `Show ${id}`, Type: 'Program', ChannelId: id, StartDate: at(-0.4), EndDate: at(0.6), IsSeries: true, ParentIndexNumber: 7, IndexNumber: 17, EpisodeTitle: 'The Doll' },
+    { Id: `${id}-b`, Name: 'Late News', Type: 'Program', ChannelId: id, StartDate: at(0.6), EndDate: at(1.6), IsNews: true, IsLive: true },
+    { Id: `${id}-c`, Name: 'Night Movie', Type: 'Program', ChannelId: id, StartDate: at(1.6), EndDate: at(3.6), IsMovie: true },
+  ];
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  await page.route(
+    (url) => url.pathname.includes('/LiveTv/'),
+    (route) => {
+      const url = new URL(route.request().url());
+      const q = url.searchParams;
+      if (url.pathname.endsWith('/LiveTv/GuideInfo')) return route.fulfill({ json: { StartDate: at(-2), EndDate: at(72) } });
+      if (url.pathname.endsWith('/LiveTv/Channels')) {
+        const start = Number(q.get('startIndex') ?? 0);
+        const limit = Number(q.get('limit') ?? 30);
+        return route.fulfill({ json: { Items: channels.slice(start, start + limit), TotalRecordCount: channels.length, StartIndex: start } });
+      }
+      if (url.pathname.endsWith('/LiveTv/Programs/Recommended'))
+        return route.fulfill({ json: { Items: [{ ...programsOf('gc0')[0], ChannelName: 'Trench 1', ChannelNumber: '1', ChannelPrimaryImageTag: 't' }] } });
+      if (url.pathname.endsWith('/LiveTv/Programs')) {
+        const items = q.getAll('channelIds').flatMap(programsOf);
+        if (q.get('isMovie') === 'true') return route.fulfill({ json: { Items: [{ ...programsOf('gc3')[2], StartDate: at(1.6), ChannelName: 'Trench 4' }] } });
+        if (q.get('hasAired') === 'false') return route.fulfill({ json: { Items: [] } });
+        return route.fulfill({ json: { Items: items } });
+      }
+      return route.fulfill({ json: { Items: [] } });
+    },
+  );
+  await page.route(/\/Items\/gc\d+\/Images\/Primary/, (route) => route.fulfill({ body: png, contentType: 'image/png' }));
+
+  await signIn(page);
+  await page.setViewportSize({ width: 1280, height: 860 });
+
+  // Programs (the first tab, as jellyfin-web): On Now, and Movies; empty rows hide.
+  await page.goto('./#/livetv?topParentId=guide-view&collectionType=livetv');
+  await expect(page.getByRole('tab', { name: 'Programs', selected: true })).toBeVisible();
+  const onNow = page.getByRole('region', { name: 'On Now' });
+  await expect(onNow.getByTestId('program-card')).toContainText('S7:E17 · The Doll');
+  await expect(onNow.getByTestId('program-card')).toContainText('New');
+  await expect(page.getByRole('region', { name: 'Movies' }).getByTestId('program-card')).toContainText('Night Movie');
+  await expect(page.getByRole('region', { name: 'Sports' })).toHaveCount(0);
+  await page.screenshot({ path: `${EVIDENCE}24-livetv-programs.png`, fullPage: true });
+
+  // Guide: rows of channels, programmes in time, the now line.
+  const started = Date.now();
+  await page.getByRole('tab', { name: 'Guide' }).click();
+  await expect(page).toHaveURL(/tab=1/);
+  const grid = page.getByRole('grid', { name: 'TV guide' });
+  const seinfeld = grid.getByRole('link', { name: /^Seinfeld, S7:E17 · The Doll, .*, New, On now$/ });
+  await expect(seinfeld).toBeVisible();
+  expect(Date.now() - started, 'first guide rows').toBeLessThan(2_000);
+  await expect(page.getByTestId('guide-now-line')).toBeVisible();
+  await expect(grid.getByTestId('guide-row')).toHaveCount(30);
+  await page.screenshot({ path: `${EVIDENCE}25-livetv-guide.png` });
+
+  // Scrolling the grid streams the next page of channels in.
+  await grid.getByTestId('guide-row').last().scrollIntoViewIfNeeded();
+  await expect(grid.getByTestId('guide-row')).toHaveCount(40);
+
+  // Keyboard: Tab reaches one cell; arrows walk the grid; Enter opens.
+  await page.getByTestId('guide-now').click();
+  await grid.getByRole('link', { name: 'Play Trench 1', exact: true }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(seinfeld).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(grid.getByRole('link', { name: /^Show gc1,/ })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(grid.getByRole('link', { name: /^Late News, .*, Live$/ }).nth(1)).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/#\/details\?id=gc1-b$/);
+  await page.goBack();
+
+  // The day picker reaches the guide's last day; Now comes back.
+  await page.getByLabel('Day').selectOption({ index: 1 });
+  await expect(page).toHaveURL(/day=\d{4}-\d{2}-\d{2}/);
+  await page.getByTestId('guide-now').click();
+  await expect(page).not.toHaveURL(/day=/);
+
+  // A channel plays.
+  await grid.getByRole('link', { name: 'Play Trench 2', exact: true }).click();
+  await expect(page).toHaveURL(/#\/video\?id=gc1$/);
+});
+
 test('dashboard playback and networking pages load and save like jellyfin-web', async ({ page }) => {
   await signIn(page);
   await page.goto('./#/dashboard');

@@ -4,6 +4,7 @@ import type { components } from './schema';
 import { mediaUrl } from './mediaUrl';
 import { TICKS_PER_SECOND, formatRuntime } from '../lib/format';
 import { detailsUrl, listUrl } from '../routes/paths';
+import { airTime, episodeLine, programBadge } from './programs';
 
 type User = components['schemas']['UserDto'];
 
@@ -333,6 +334,19 @@ export function chapterImageUrl(serverUrl: string, itemId: string, index: number
  */
 export function primaryMediaInfo(item: BaseItem, now: Date = new Date()): { key: string; text: string }[] {
   const out: { key: string; text: string }[] = [];
+  if (item.Type === 'Program') {
+    // A guide programme: when and where it airs, its episode, and its badge.
+    const air = airTime(item, now);
+    if (air) out.push({ key: 'air', text: air });
+    const episode = episodeLine(item);
+    if (episode) out.push({ key: 'episode', text: episode });
+    const channel = [item.ChannelNumber, item.ChannelName].filter(Boolean).join(' ');
+    if (channel) out.push({ key: 'channel', text: channel });
+    const badge = programBadge(item);
+    if (badge) out.push({ key: 'badge', text: badge });
+    if (item.OfficialRating) out.push({ key: 'rating', text: item.OfficialRating });
+    return out;
+  }
   if (item.Type === 'Series' && item.ProductionYear) {
     if (item.Status === 'Continuing') out.push({ key: 'year', text: `${item.ProductionYear} - Present` });
     else {
