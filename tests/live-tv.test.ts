@@ -8,6 +8,7 @@ import {
   fetchSchedulesDirectCountries,
   fetchTunerGroups,
   filterLists,
+  groupTimersByDay,
   initialFilter,
   keptChannels,
   saveTunerHost,
@@ -128,5 +129,20 @@ describe('displayUrl', () => {
     expect(displayUrl('http://p/list.m3u')).toBe('http://p/list.m3u');
     expect(displayUrl('/media/list.m3u')).toBe('/media/list.m3u');
     expect(displayUrl(null)).toBe('');
+  });
+});
+
+describe('groupTimersByDay', () => {
+  it('runs of one start day, in the server’s order, as jellyfin-web groupsTimers', () => {
+    const at = (d: number, h: number) => new Date(2026, 10, d, h).toISOString();
+    const groups = groupTimersByDay([
+      { Id: 'a', StartDate: at(4, 20) },
+      { Id: 'b', StartDate: at(4, 21) },
+      { Id: 'c', StartDate: at(5, 9) },
+      { Id: 'd' },
+    ]);
+    expect(groups.map((g) => g.timers.map((t) => t.Id))).toEqual([['a', 'b'], ['c'], ['d']]);
+    expect(groups[0]!.name).toBe(new Date(2026, 10, 4).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }));
+    expect(groups[2]!.name).toBe('');
   });
 });

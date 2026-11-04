@@ -15,6 +15,14 @@ Release assets: `ghcr.io/deadfin-org/deadfin-web:<tag>` and
 
 ### Added
 
+- **Transcode workers page** (deadfin-web#71): Dashboard → Playback →
+  Transcode Workers, on Deadfin's native admin API (D-118, needs a Deadfin
+  0.4 server). It lists the workers with state, pools, media input,
+  capabilities and jobs, and edits or revokes them; creates and revokes join
+  tokens and shows a new token once with the worker command line; edits the
+  placement policy, the scaling token and the extra server key pins. The
+  plain-HTTP toggle shows once the server has its setting (deadfin#664).
+
 - **Live TV Programs and Guide tabs** (deadfin-web#91), as jellyfin-web
   12.0. Programs shows On Now and upcoming Shows, Movies, Sports, For Kids
   and News. Guide is a time grid of channels and programmes for today or a

@@ -20,8 +20,10 @@ import { LIST_KEYS, useListState, type ListState } from './listState';
 import { Shelf } from './Shelf';
 import { StreamedGrid, useStreamedList } from './StreamedGrid';
 import { Toolbar } from './Toolbar';
+import { ChannelCard, useAiring } from '../livetv/ChannelCard';
 import { GuideTab } from '../livetv/Guide';
 import { ProgramsTab } from '../livetv/Programs';
+import { RecordingsTab, ScheduleTab, SeriesTab } from '../livetv/Recordings';
 import { libraryType, pickTab, type LibraryTab, type LibraryType, type SuggestionSection } from './views';
 import '../home.css';
 import '../library.css';
@@ -114,6 +116,12 @@ function TabContent(props: { type: LibraryType; tab: LibraryTab; ctx: Ctx }) {
       return <ProgramsTab ctx={ctx} />;
     case 'guide':
       return <GuideTab ctx={ctx} />;
+    case 'recordings':
+      return <RecordingsTab ctx={ctx} />;
+    case 'schedule':
+      return <ScheduleTab ctx={ctx} />;
+    case 'series':
+      return <SeriesTab ctx={ctx} />;
   }
 }
 
@@ -146,6 +154,8 @@ function ItemsTab({ tab, ctx }: { tab: LibraryTab; ctx: Ctx }) {
   const list = useStreamedList(['library', ctx.userId, ctx.parentId, tab.index, tab.source ?? 'items', tab.itemTypes, state], (start, limit) =>
     fetchListPage(ctx.api, tab.source ?? 'items', listQuery(listCtx, tab, state, start, limit)),
   );
+  // Channel cards show what is on now, one request per page of channels.
+  const airing = useAiring(ctx, channels ? list.query.data?.pages : undefined);
   return (
     <div className="library-list">
       <Toolbar
@@ -159,7 +169,17 @@ function ItemsTab({ tab, ctx }: { tab: LibraryTab; ctx: Ctx }) {
         itemTypes={tab.itemTypes}
         channelLists={channels}
       />
-      <StreamedGrid list={list} empty={tab.empty} render={(item) => <ItemCard serverUrl={ctx.serverUrl} item={item} />} />
+      <StreamedGrid
+        list={list}
+        empty={tab.empty}
+        render={(item) =>
+          channels ? (
+            <ChannelCard serverUrl={ctx.serverUrl} channel={item} program={airing.get(item.Id ?? '')} />
+          ) : (
+            <ItemCard serverUrl={ctx.serverUrl} item={item} />
+          )
+        }
+      />
     </div>
   );
 }

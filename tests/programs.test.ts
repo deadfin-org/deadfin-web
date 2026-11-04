@@ -130,3 +130,33 @@ describe('program sections', () => {
     expect(PROGRAM_SECTIONS[1]!.query).toEqual({ hasAired: false, isMovie: false, isSports: false, isKids: false, isNews: false, isSeries: true });
   });
 });
+
+describe('guide settings', () => {
+  it('parse with jellyfin-web’s defaults and write its keys', async () => {
+    const { parseGuideSettings, guideSettingsPrefs, categoryQuery, showsProgram } = await import('../src/api/guideSettings');
+    const d = parseGuideSettings(null);
+    expect(d).toEqual({
+      channelOrder: 'Number',
+      favoritesAtTop: true,
+      indicators: { hd: false, live: true, new: true, premiere: true, repeat: false },
+      colorCoded: false,
+    });
+    const s = parseGuideSettings({ 'guide-indicator-live': 'false', 'guide-indicator-hd': 'true', 'livetv-channelorder': 'DatePlayed' });
+    expect(s.indicators.live).toBe(false);
+    expect(s.indicators.hd).toBe(true);
+    expect(guideSettingsPrefs(s)).toMatchObject({ 'livetv-channelorder': 'DatePlayed', 'guide-indicator-live': 'false', 'livetv-favoritechannelsattop': 'true' });
+    expect(categoryQuery([])).toEqual({});
+    expect(categoryQuery(['movies', 'sports', 'kids', 'news'])).toEqual({});
+    expect(categoryQuery(['news', 'kids'])).toEqual({ isKids: true, isNews: true });
+    expect(showsProgram({ IsSeries: true }, ['news'])).toBe(false);
+    expect(showsProgram({ IsSeries: true }, [])).toBe(true);
+    expect(showsProgram({ IsMovie: true }, ['movies'])).toBe(true);
+  });
+
+  it('badges give way when one is off, as jellyfin-web', () => {
+    const on = { live: true, premiere: true, new: true, repeat: false };
+    expect(programBadge({ IsLive: true, IsPremiere: true }, { ...on, live: false })).toBe('Premiere');
+    expect(programBadge({ IsSeries: true, IsRepeat: true }, on)).toBeNull();
+    expect(programBadge({ IsSeries: true, IsRepeat: true }, { ...on, repeat: true })).toBe('Repeat');
+  });
+});

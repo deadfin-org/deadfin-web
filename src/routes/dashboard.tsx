@@ -34,6 +34,8 @@ export const dashboardRoutes: { path: string; element: ReactElement }[] = [
   { path: 'playback/resume', element: playbackPage('Resume') },
   { path: 'playback/streaming', element: playbackPage('Streaming') },
   { path: 'playback/trickplay', element: playbackPage('Trickplay') },
+  // #71: Deadfin transcode workers (D-118).
+  { path: 'playback/workers', element: playbackPage('TranscodeWorkers') },
   { path: 'networking', element: playbackPage('Networking') },
   { path: 'livetv', element: playbackPage('LiveTv') },
   { path: 'livetv/tuner', element: playbackPage('TunerEdit') },

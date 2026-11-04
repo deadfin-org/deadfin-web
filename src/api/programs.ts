@@ -112,17 +112,31 @@ export function airedPercent(p: Timed, now: Date = new Date()): number {
   return Math.min(100, Math.max(0, ((now.getTime() - s) / (e - s)) * 100));
 }
 
-export type ProgramBadge = 'Live' | 'Premiere' | 'New';
+export type ProgramBadge = 'Live' | 'Premiere' | 'New' | 'Repeat';
+
+/** Which guide indicators show; jellyfin-web's defaults leave Repeat off. */
+export interface BadgeOptions {
+  live: boolean;
+  premiere: boolean;
+  new: boolean;
+  repeat: boolean;
+}
+
+const DEFAULT_BADGES: BadgeOptions = { live: true, premiere: true, new: true, repeat: false };
 
 /**
- * The guide indicator, in jellyfin-web's order and with its defaults
- * (Repeat is off by default): Live, Premiere, then New for a series airing
- * that is not a repeat.
+ * The guide indicator, in jellyfin-web's order: Live, Premiere, New for a
+ * series airing that is not a repeat, then Repeat. One that is turned off
+ * gives way to the next.
  */
-export function programBadge(p: Pick<BaseItem, 'IsLive' | 'IsPremiere' | 'IsSeries' | 'IsRepeat'>): ProgramBadge | null {
-  if (p.IsLive) return 'Live';
-  if (p.IsPremiere) return 'Premiere';
-  if (p.IsSeries && !p.IsRepeat) return 'New';
+export function programBadge(
+  p: Pick<BaseItem, 'IsLive' | 'IsPremiere' | 'IsSeries' | 'IsRepeat'>,
+  show: BadgeOptions = DEFAULT_BADGES,
+): ProgramBadge | null {
+  if (p.IsLive && show.live) return 'Live';
+  if (p.IsPremiere && show.premiere) return 'Premiere';
+  if (p.IsSeries && !p.IsRepeat && show.new) return 'New';
+  if (p.IsSeries && p.IsRepeat && show.repeat) return 'Repeat';
   return null;
 }
 
@@ -148,7 +162,7 @@ export function airTime(p: Timed, now: Date = new Date()): string {
 }
 
 /** The accessible name of a guide cell: title, episode, time, and state. */
-export function programLabel(p: BaseItem, now: Date = new Date()): string {
-  const parts = [p.Name ?? 'Untitled', episodeLine(p), timeRange(p), programBadge(p) ?? '', isAiring(p, now) ? 'On now' : ''];
+export function programLabel(p: BaseItem, now: Date = new Date(), show: BadgeOptions = DEFAULT_BADGES): string {
+  const parts = [p.Name ?? 'Untitled', episodeLine(p), timeRange(p), programBadge(p, show) ?? '', isAiring(p, now) ? 'On now' : ''];
   return parts.filter(Boolean).join(', ');
 }

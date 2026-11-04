@@ -13,7 +13,7 @@ export interface LibraryTab {
   /** The `?tab=` value, as jellyfin-web; a tab Deadfin does not have yet leaves a gap. */
   index: number;
   label: string;
-  kind: 'items' | 'suggestions' | 'genres' | 'studios' | 'upcoming' | 'channels' | 'programs' | 'guide';
+  kind: 'items' | 'suggestions' | 'genres' | 'studios' | 'upcoming' | 'channels' | 'programs' | 'guide' | 'recordings' | 'schedule' | 'series';
   /** For `items`: where the pages come from (default /Items). */
   source?: ListSource;
   itemTypes?: ItemKind[];
@@ -164,13 +164,16 @@ export const LIBRARY_TYPES: LibraryType[] = [
     ],
   },
   {
-    // Recordings, Schedule and Series wait for the server's DVR (deadfin#715).
+    // Recordings, Schedule and Series read the DVR endpoints; Deadfin answers them empty (deadfin#714).
     path: '/livetv',
     collectionType: 'livetv',
     tabs: [
       { index: 0, label: 'Programs', kind: 'programs' },
       { index: 1, label: 'Guide', kind: 'guide' },
       { index: 2, label: 'Channels', kind: 'channels', folders: true, filters: ['favorite', 'tags'] },
+      { index: 3, label: 'Recordings', kind: 'recordings' },
+      { index: 4, label: 'Schedule', kind: 'schedule' },
+      { index: 5, label: 'Series', kind: 'series' },
     ],
   },
   {

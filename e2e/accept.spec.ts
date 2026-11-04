@@ -661,7 +661,8 @@ test('live tv guide and programs: a time grid of channels, programmes by categor
   const HOUR = 3_600_000;
   const now = Date.now();
   const at = (h: number) => new Date(now + h * HOUR).toISOString();
-  const channels = Array.from({ length: 40 }, (_, i) => ({
+  // The household lineup's size: the guide must stay fast at 11k channels.
+  const channels = Array.from({ length: 11_000 }, (_, i) => ({
     Id: `gc${i}`,
     Name: `Trench ${i + 1}`,
     Type: 'TvChannel',
@@ -711,6 +712,13 @@ test('live tv guide and programs: a time grid of channels, programmes by categor
   await expect(page.getByRole('region', { name: 'Sports' })).toHaveCount(0);
   await page.screenshot({ path: `${EVIDENCE}24-livetv-programs.png`, fullPage: true });
 
+  // Recordings, Schedule and Series: Deadfin has no DVR and answers empty lists (deadfin#714).
+  for (const name of ['Recordings', 'Schedule', 'Series']) {
+    await page.getByRole('tab', { name }).click();
+    await expect(page.getByTestId('library-empty')).toHaveText('No Items are currently available.');
+  }
+  await page.getByRole('tab', { name: 'Programs' }).click();
+
   // Guide: rows of channels, programmes in time, the now line.
   const started = Date.now();
   await page.getByRole('tab', { name: 'Guide' }).click();
@@ -720,12 +728,19 @@ test('live tv guide and programs: a time grid of channels, programmes by categor
   await expect(seinfeld).toBeVisible();
   expect(Date.now() - started, 'first guide rows').toBeLessThan(2_000);
   await expect(page.getByTestId('guide-now-line')).toBeVisible();
-  await expect(grid.getByTestId('guide-row')).toHaveCount(30);
+  // The page in view and the next one are drawn; the grid is as tall as all 11,000 channels.
+  await expect(grid.getByTestId('guide-row')).toHaveCount(60);
+  await expect(grid).toHaveAttribute('aria-rowcount', '11001');
   await page.screenshot({ path: `${EVIDENCE}25-livetv-guide.png` });
 
-  // Scrolling the grid streams the next page of channels in.
-  await grid.getByTestId('guide-row').last().scrollIntoViewIfNeeded();
-  await expect(grid.getByTestId('guide-row')).toHaveCount(40);
+  // The end of the lineup is one scroll away, and the DOM stays at a few pages.
+  const scroller = page.getByTestId('guide-scroll');
+  const jumped = Date.now();
+  await scroller.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await expect(grid.getByRole('link', { name: 'Play Trench 11000', exact: true })).toBeVisible();
+  expect(Date.now() - jumped, 'last guide rows').toBeLessThan(2_000);
+  expect(await grid.getByTestId('guide-row').count()).toBeLessThanOrEqual(120);
+  await expect(grid.getByRole('link', { name: 'Play Trench 1', exact: true })).toHaveCount(0);
 
   // Keyboard: Tab reaches one cell; arrows walk the grid; Enter opens.
   await page.getByTestId('guide-now').click();
@@ -745,6 +760,21 @@ test('live tv guide and programs: a time grid of channels, programmes by categor
   await expect(page).toHaveURL(/day=\d{4}-\d{2}-\d{2}/);
   await page.getByTestId('guide-now').click();
   await expect(page).not.toHaveURL(/day=/);
+
+  // Guide settings save to the user's display preferences (shared with jellyfin-web) and reorder the channels.
+  const asked = page.waitForRequest((r) => r.url().includes('/LiveTv/Channels') && new URL(r.url()).searchParams.get('enableFavoriteSorting') === 'false');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  await settings.getByLabel('Place favorite channels at the beginning').uncheck();
+  await settings.getByRole('button', { name: 'Save' }).click();
+  await expect(settings).toHaveCount(0);
+  await asked;
+  await page.reload();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(settings.getByLabel('Place favorite channels at the beginning')).not.toBeChecked();
+  await settings.getByLabel('Place favorite channels at the beginning').check();
+  await settings.getByRole('button', { name: 'Save' }).click();
+  await expect(settings).toHaveCount(0);
 
   // A channel plays.
   await grid.getByRole('link', { name: 'Play Trench 2', exact: true }).click();

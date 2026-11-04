@@ -1,8 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { Api } from '../../api/client';
 import { primaryImageUrl } from '../../api/client';
+import {
+  categoryQuery,
+  DEFAULT_GUIDE_SETTINGS,
+  fetchGuideSettings,
+  programCategory,
+  saveGuideSettings,
+  showsProgram,
+  type GuideCategory,
+  type GuideSettings,
+} from '../../api/guideSettings';
 import { fetchListPage, NO_FILTERS, type BaseItem, type Page } from '../../api/library';
 import { fetchGuideChannels, fetchGuideInfo, fetchGuidePrograms } from '../../api/liveTv';
 import {
@@ -21,12 +31,19 @@ import {
 import { detailsUrl, videoUrl } from '../../routes/paths';
 import { useListState } from '../library/listState';
 import { Toolbar } from '../library/Toolbar';
+import { GuideSettingsDialog } from './GuideSettings';
 import './livetv.css';
 
 interface Ctx {
   api: Api;
   serverUrl: string;
   userId: string;
+}
+
+/** How programmes are drawn: the saved settings and this visit's categories. */
+interface Look {
+  settings: GuideSettings;
+  categories: GuideCategory[];
 }
 
 /** Channels per request. Each page asks for its own day of programmes. */
@@ -45,9 +62,10 @@ function useNow(everyMs = 60_000): Date {
 /**
  * The Guide tab: a time grid of channels × programmes, as jellyfin-web's
  * guide. Today opens at the current half hour; the day picker goes up to
- * the guide's last day. Channels stream in pages as the grid scrolls, and
- * each page loads its programmes for the shown day. A programme opens its
- * details; a channel plays.
+ * the guide's last day. The grid is as tall as every channel, but only the
+ * pages of 30 in view are fetched and drawn, each with its programmes for
+ * the shown day, so 40,000 channels cost what is on screen. A programme
+ * opens its details; a channel plays.
  *
  * Keyboard: one cell is in the Tab order. Arrow keys move between
  * programmes (Up and Down keep the time), Home and End go to the ends of a
@@ -70,48 +88,97 @@ export function GuideTab({ ctx }: { ctx: Ctx }) {
   const win = useMemo(() => guideWindow(parseDay(dayKey)!, anchor), [dayKey, anchor]);
   const slots = timeSlots(win.start, win.end);
 
-  const list = state.list;
-  const channels = useInfiniteQuery({
-    queryKey: ['guide-channels', ctx.userId, list],
-    initialPageParam: 0,
-    queryFn: ({ pageParam }): Promise<Page> =>
-      list
-        ? fetchListPage(ctx.api, 'items', {
-            userId: ctx.userId,
-            parentId: list,
-            recursive: false,
-            sortBy: state.sortBy,
-            descending: false,
-            filters: NO_FILTERS,
-            startIndex: pageParam,
-            limit: GUIDE_PAGE,
-          })
-        : fetchGuideChannels(ctx.api, ctx.userId, pageParam, GUIDE_PAGE),
-    getNextPageParam: (last) => {
-      const next = last.startIndex + last.items.length;
-      return last.items.length > 0 && next < last.total ? next : undefined;
+  // Guide settings live in the user's display preferences, shared with jellyfin-web.
+  const client = useQueryClient();
+  const settingsQuery = useQuery({ queryKey: ['guide-settings', ctx.userId], staleTime: Infinity, queryFn: () => fetchGuideSettings(ctx.api, ctx.userId) });
+  const settings = settingsQuery.data ?? DEFAULT_GUIDE_SETTINGS;
+  const [categories, setCategories] = useState<GuideCategory[]>([]);
+  const [editing, setEditing] = useState(false);
+  const saveSettings = useMutation({
+    mutationFn: (next: { settings: GuideSettings; categories: GuideCategory[] }) => saveGuideSettings(ctx.api, ctx.userId, next.settings),
+    onSuccess: (_, next) => {
+      client.setQueryData(['guide-settings', ctx.userId], next.settings);
+      setCategories(next.categories);
+      setEditing(false);
     },
   });
-  const pages = channels.data?.pages ?? [];
-  const total = pages[0] && pages[0].total !== Number.MAX_SAFE_INTEGER ? pages[0].total : undefined;
+  const look: Look = { settings, categories };
 
-  // The next page loads when the end of the grid scrolls near.
-  const sentinel = useRef<HTMLDivElement>(null);
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = channels;
+  const list = state.list;
+  const channelOpts = {
+    favoritesAtTop: settings.favoritesAtTop,
+    recentlyWatched: settings.channelOrder === 'DatePlayed',
+    categories: categoryQuery(categories),
+  };
+  const fetchChannels = (page: number): Promise<Page> =>
+    list
+      ? fetchListPage(ctx.api, 'items', {
+          userId: ctx.userId,
+          parentId: list,
+          recursive: false,
+          sortBy: state.sortBy,
+          descending: false,
+          filters: NO_FILTERS,
+          startIndex: page * GUIDE_PAGE,
+          limit: GUIDE_PAGE,
+        })
+      : fetchGuideChannels(ctx.api, ctx.userId, page * GUIDE_PAGE, GUIDE_PAGE, channelOpts);
+
+  // Only the pages of channels in view, and one either side, are fetched
+  // and drawn; the rest of the grid is empty space of the right height, so
+  // the scrollbar spans every channel and the DOM stays small at 40k.
+  const [range, setRange] = useState({ from: 0, to: 1 });
+  const rowHeight = useRef(64);
+  const shown = Array.from({ length: range.to - range.from + 1 }, (_, i) => range.from + i);
+  const pageQueries = useQueries({
+    queries: [0, ...shown.filter((p) => p !== 0)].map((page) => ({
+      queryKey: ['guide-channels', ctx.userId, list, list ? null : channelOpts, page],
+      staleTime: 5 * 60_000,
+      // The channel order follows the settings; wait for them so the first page is asked once.
+      enabled: !settingsQuery.isPending,
+      queryFn: () => fetchChannels(page),
+    })),
+  });
+  const first = pageQueries[0]!;
+  const pageOf = new Map<number, Page>();
+  [0, ...shown.filter((p) => p !== 0)].forEach((page, i) => {
+    const data = pageQueries[i]!.data;
+    if (data) pageOf.set(page, data);
+  });
+  const total = first.data ? channelCount(pageOf) : undefined;
+  const pageCount = total === undefined ? 1 : Math.max(1, Math.ceil(total / GUIDE_PAGE));
+
+  const onScroll = () => {
+    const el = scroller.current;
+    if (!el) return;
+    const head = el.querySelector<HTMLElement>('.guide-head')?.offsetHeight ?? 0;
+    const row = el.querySelector<HTMLElement>('.guide-row')?.offsetHeight;
+    if (row) rowHeight.current = row;
+    const top = Math.max(0, el.scrollTop - head);
+    const firstPage = Math.floor(top / rowHeight.current / GUIDE_PAGE);
+    const lastPage = Math.floor((top + el.clientHeight) / rowHeight.current / GUIDE_PAGE);
+    const next = { from: Math.max(0, firstPage - 1), to: Math.min(pageCount - 1, lastPage + 1) };
+    setRange((r) => (r.from === next.from && r.to === next.to ? r : next));
+  };
+  // The page count is known once the first page is in.
+  useEffect(onScroll, [pageCount]);
+  // Another channel list, order or category starts at its top.
+  const orderKey = JSON.stringify([list, channelOpts]);
   useEffect(() => {
-    const el = sentinel.current;
-    if (!el || !hasNextPage || typeof IntersectionObserver === 'undefined') return;
-    const io = new IntersectionObserver((e) => e.some((x) => x.isIntersecting) && !isFetchingNextPage && void fetchNextPage(), {
-      root: scroller.current,
-      rootMargin: '600px',
-    });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+    if (scroller.current) scroller.current.scrollTop = 0;
+    setRange({ from: 0, to: 1 });
+  }, [orderKey]);
 
   // Roving focus: one cell (by data-key) is tabbable.
   const [active, setActive] = useState<string | null>(null);
   useEffect(() => setActive(null), [dayKey, anchor, list]);
+  // When the active cell has scrolled out of the window, the first drawn cell takes the Tab stop.
+  useEffect(() => {
+    const grid = scroller.current;
+    if (!grid || grid.querySelector('[data-key][tabindex="0"]')) return;
+    const key = grid.querySelector<HTMLElement>('[data-key]')?.dataset.key;
+    if (key) setActive(key);
+  });
 
   const setDay = (value: string) =>
     setParams(
@@ -129,6 +196,7 @@ export function GuideTab({ ctx }: { ctx: Ctx }) {
     setAnchor(new Date());
     const el = scroller.current;
     if (el) el.scrollLeft = el.scrollTop = 0;
+    setRange({ from: 0, to: Math.min(1, pageCount - 1) });
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -144,7 +212,7 @@ export function GuideTab({ ctx }: { ctx: Ctx }) {
 
   return (
     <div className="library-list guide" data-testid="guide">
-      <Toolbar total={total} state={state} onChange={setState} channelLists>
+      <Toolbar total={first.data && first.data.total !== Number.MAX_SAFE_INTEGER ? total : undefined} state={state} onChange={setState} channelLists>
         <select className="guide-day" value={dayKey} onChange={(e) => setDay(e.target.value)} aria-label="Day" data-testid="guide-day">
           {days.map((d) => (
             <option key={d.value} value={d.value}>
@@ -155,20 +223,36 @@ export function GuideTab({ ctx }: { ctx: Ctx }) {
         <button type="button" className="library-order readout" onClick={jumpToNow} data-testid="guide-now">
           Now
         </button>
+        <button type="button" className="library-order readout" onClick={() => setEditing(true)} data-testid="guide-settings-open">
+          Settings
+        </button>
       </Toolbar>
-      {channels.isError ? (
+      {editing && (
+        <GuideSettingsDialog
+          settings={settings}
+          categories={categories}
+          busy={saveSettings.isPending}
+          error={saveSettings.isError ? saveSettings.error.message : null}
+          onSave={(next, cats) => saveSettings.mutate({ settings: next, categories: cats })}
+          onClose={() => {
+            setEditing(false);
+            saveSettings.reset();
+          }}
+        />
+      )}
+      {first.isError ? (
         <p className="home-status readout" role="alert">
           The guide could not be loaded.
         </p>
-      ) : channels.isPending ? (
+      ) : first.isPending ? (
         <p className="home-status readout">Loading…</p>
-      ) : pages[0]!.items.length === 0 ? (
+      ) : total === 0 ? (
         <p className="home-status readout" data-testid="library-empty">
           No channels found.
         </p>
       ) : (
-        <div className="guide-scroll" ref={scroller}>
-          <div className="guide-grid" style={gridStyle} role="grid" aria-label="TV guide" aria-rowcount={total ? total + 1 : -1} onKeyDown={onKeyDown}>
+        <div className="guide-scroll" ref={scroller} onScroll={onScroll} data-testid="guide-scroll">
+          <div className="guide-grid" style={gridStyle} role="grid" aria-label="TV guide" aria-rowcount={(total ?? 0) + 1} onKeyDown={onKeyDown}>
             <div className="guide-head" role="row" aria-rowindex={1}>
               <div className="guide-corner readout" role="columnheader">
                 {dayLabelOf(days, dayKey)}
@@ -184,37 +268,62 @@ export function GuideTab({ ctx }: { ctx: Ctx }) {
             {nowFrac >= 0 && nowFrac < 1 && (
               <div className="guide-now" style={{ '--guide-now': nowFrac } as CSSProperties} aria-hidden="true" data-testid="guide-now-line" />
             )}
-            {pages.map((page, i) => (
-              <GuidePage
-                key={page.startIndex}
-                ctx={ctx}
-                channels={page.items}
-                rowOffset={page.startIndex}
-                win={win}
-                now={now}
-                active={active ?? (i === 0 ? firstKey(page.items) : null)}
-                onFocusCell={setActive}
-              />
-            ))}
-            <div ref={sentinel} />
+            <div style={{ height: rowsHeight(range.from * GUIDE_PAGE) }} aria-hidden="true" />
+            {shown.map((page) => {
+              const data = pageOf.get(page);
+              const rows = Math.min(GUIDE_PAGE, (total ?? 0) - page * GUIDE_PAGE);
+              if (rows <= 0) return null;
+              return data ? (
+                <GuidePage
+                  key={page}
+                  ctx={ctx}
+                  channels={data.items}
+                  rowOffset={data.startIndex}
+                  win={win}
+                  now={now}
+                  look={look}
+                  active={active}
+                  onFocusCell={setActive}
+                />
+              ) : (
+                <div key={page} className="guide-pending" style={{ height: rowsHeight(rows) }} aria-busy="true" />
+              );
+            })}
+            <div style={{ height: rowsHeight(Math.max(0, (total ?? 0) - (range.to + 1) * GUIDE_PAGE)) }} aria-hidden="true" />
           </div>
         </div>
-      )}
-      {hasNextPage && (
-        <button className="library-more readout" data-testid="library-more" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()}>
-          {isFetchingNextPage ? 'Loading…' : 'More channels'}
-        </button>
       )}
     </div>
   );
 }
 
-function dayLabelOf(days: { value: string; label: string }[], value: string): string {
-  return days.find((d) => d.value === value)?.label ?? '';
+/** The height of `n` guide rows, from the --guide-row token. */
+function rowsHeight(n: number): string {
+  return `calc(${n} * var(--guide-row))`;
 }
 
-function firstKey(channels: BaseItem[]): string | null {
-  return channels[0]?.Id ? `c:${channels[0].Id}` : null;
+/**
+ * How many channels the guide has. Endpoints without a total (a channel
+ * list's /Items always has one) count what is loaded, plus a page while
+ * the last loaded page is full.
+ */
+export function channelCount(pages: Map<number, Page>): number {
+  const firstPage = pages.get(0);
+  if (firstPage && firstPage.total !== Number.MAX_SAFE_INTEGER) return firstPage.total;
+  let end = 0;
+  let full = false;
+  for (const p of pages.values()) {
+    const e = p.startIndex + p.items.length;
+    if (e >= end) {
+      end = e;
+      full = p.items.length === GUIDE_PAGE;
+    }
+  }
+  return full ? end + GUIDE_PAGE : end;
+}
+
+function dayLabelOf(days: { value: string; label: string }[], value: string): string {
+  return days.find((d) => d.value === value)?.label ?? '';
 }
 
 /** One page of channels and their programmes for the window. */
@@ -224,6 +333,7 @@ function GuidePage(props: {
   rowOffset: number;
   win: { start: Date; end: Date };
   now: Date;
+  look: Look;
   active: string | null;
   onFocusCell: (key: string) => void;
 }) {
@@ -258,6 +368,7 @@ function GuidePage(props: {
                 programs={byChannel.get(ch.Id ?? '') ?? []}
                 win={win}
                 now={props.now}
+                look={props.look}
                 active={props.active}
                 onFocusCell={props.onFocusCell}
                 failed={programs.isError}
@@ -302,10 +413,12 @@ function ProgramCells(props: {
   programs: BaseItem[];
   win: { start: Date; end: Date };
   now: Date;
+  look: Look;
   active: string | null;
   onFocusCell: (key: string) => void;
   failed: boolean;
 }) {
+  const { settings, categories } = props.look;
   const placed = props.programs
     .map((p) => ({ p, at: placeProgram(p, props.win.start, props.win.end) }))
     .filter((x): x is { p: BaseItem; at: NonNullable<typeof x.at> } => x.at !== null);
@@ -319,28 +432,37 @@ function ProgramCells(props: {
     <>
       {placed.map(({ p, at }) => {
         const key = `p:${p.Id}`;
-        const badge = programBadge(p);
+        const badge = programBadge(p, settings.indicators);
         const episode = episodeLine(p);
         const airing = isAiring(p, props.now);
+        // A programme outside the picked categories keeps its cell, without its title (jellyfin-web).
+        const shown = showsProgram(p, categories);
+        const category = shown && settings.colorCoded ? programCategory(p) : null;
+        const cls = ['guide-program', airing && 'is-now', category && `is-${category}`].filter(Boolean).join(' ');
         return (
           <div key={p.Id} role="gridcell" className="guide-cell" style={{ left: `${at.left * 100}%`, width: `${at.width * 100}%` }}>
             <Link
               to={detailsUrl(p.Id ?? '')}
-              className={airing ? 'guide-program is-now' : 'guide-program'}
+              className={cls}
               data-key={key}
               data-cell="program"
               data-start={Math.max(Date.parse(p.StartDate ?? ''), props.win.start.getTime())}
               tabIndex={props.active === key ? 0 : -1}
               onFocus={() => props.onFocusCell(key)}
-              aria-label={programLabel(p, props.now)}
+              aria-label={programLabel(p, props.now, settings.indicators)}
               data-testid="guide-program"
             >
-              <span className="guide-program-name">
-                {at.clipped && <span aria-hidden="true">‹ </span>}
-                {p.Name}
-                {badge && <span className={`program-badge is-${badge.toLowerCase()}`}>{badge}</span>}
-              </span>
-              {episode && <span className="guide-program-episode">{episode}</span>}
+              {shown && (
+                <>
+                  <span className="guide-program-name">
+                    {at.clipped && <span aria-hidden="true">‹ </span>}
+                    {p.Name}
+                    {badge && <span className={`program-badge is-${badge.toLowerCase()}`}>{badge}</span>}
+                    {settings.indicators.hd && p.IsHD && <span className="program-badge is-hd">HD</span>}
+                  </span>
+                  {episode && <span className="guide-program-episode">{episode}</span>}
+                </>
+              )}
             </Link>
           </div>
         );

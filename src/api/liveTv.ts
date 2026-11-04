@@ -275,13 +275,20 @@ export async function fetchGuideInfo(api: Api): Promise<{ start: Date | null; en
 
 /**
  * One page of guide channels, as jellyfin-web's guide asks for them:
- * favorites first, no current programme, no user data, the logo only.
+ * favorites first (unless turned off), no current programme, no user data,
+ * the logo only; Recently watched sorts by DatePlayed, and the guide's
+ * categories filter the channels.
  */
 export async function fetchGuideChannels(
   api: Api,
   userId: string,
   startIndex: number,
   limit: number,
+  opts: {
+    favoritesAtTop?: boolean;
+    recentlyWatched?: boolean;
+    categories?: { isMovie?: boolean; isSports?: boolean; isKids?: boolean; isNews?: boolean };
+  } = {},
 ): Promise<{ items: BaseItem[]; total: number; startIndex: number }> {
   const { data, error } = await api.GET('/LiveTv/Channels', {
     params: {
@@ -289,7 +296,9 @@ export async function fetchGuideChannels(
         userId,
         startIndex,
         limit,
-        enableFavoriteSorting: true,
+        enableFavoriteSorting: opts.favoritesAtTop ?? true,
+        ...(opts.recentlyWatched ? { sortBy: ['DatePlayed' as const], sortOrder: 'Descending' as const } : {}),
+        ...opts.categories,
         addCurrentProgram: false,
         enableUserData: false,
         imageTypeLimit: 1,
@@ -362,5 +371,100 @@ export async function fetchProgramSection(api: Api, userId: string, section: Pro
       ? await api.GET('/LiveTv/Programs/Recommended', { params: { query: common } })
       : await api.GET('/LiveTv/Programs', { params: { query: common } });
   if (error !== undefined) throw new Error(`${section.title} failed`);
+  return data?.Items ?? [];
+}
+
+/* ---- Recordings, Schedule and Series (deadfin-web#91) ---- */
+
+export type Timer = components['schemas']['TimerInfoDto'];
+export type SeriesTimer = components['schemas']['SeriesTimerInfoDto'];
+
+const RECORDING_CARD = {
+  enableImageTypes: ['Primary' as const, 'Thumb' as const, 'Backdrop' as const],
+  imageTypeLimit: 1,
+  enableTotalRecordCount: false,
+  fields: ['CanDelete' as const, 'PrimaryImageAspectRatio' as const],
+};
+
+/**
+ * GET /LiveTv/Recordings: "Recently Added Recordings" (12, finished) or
+ * "Active Recordings" (in progress), as jellyfin-web's recording sections.
+ */
+export async function fetchRecordings(api: Api, userId: string, opts: { isInProgress: boolean }): Promise<BaseItem[]> {
+  const { data, error } = await api.GET('/LiveTv/Recordings', {
+    params: { query: { userId, ...RECORDING_CARD, ...(opts.isInProgress ? { isInProgress: true } : { isInProgress: false, limit: 12 }) } },
+  });
+  if (error !== undefined) throw new Error('Loading the recordings failed.');
+  return data?.Items ?? [];
+}
+
+/** GET /LiveTv/Recordings/Folders: "All Recordings", one card per recording group. */
+export async function fetchRecordingFolders(api: Api, userId: string): Promise<BaseItem[]> {
+  const { data, error } = await api.GET('/LiveTv/Recordings/Folders', { params: { query: { userId } } });
+  if (error !== undefined) throw new Error('Loading the recordings failed.');
+  return data?.Items ?? [];
+}
+
+/** GET /LiveTv/Timers: the scheduled recordings that have not started, as jellyfin-web's Schedule tab. */
+export async function fetchTimers(api: Api): Promise<Timer[]> {
+  const { data, error } = await api.GET('/LiveTv/Timers', { params: { query: { isActive: false, isScheduled: true } } });
+  if (error !== undefined) throw new Error('Loading the schedule failed.');
+  return data?.Items ?? [];
+}
+
+/** GET /LiveTv/SeriesTimers by name, as jellyfin-web's Series tab. */
+export async function fetchSeriesTimers(api: Api): Promise<SeriesTimer[]> {
+  const { data, error } = await api.GET('/LiveTv/SeriesTimers', { params: { query: { sortBy: 'SortName', sortOrder: 'Ascending' } } });
+  if (error !== undefined) throw new Error('Loading the series failed.');
+  return data?.Items ?? [];
+}
+
+export async function cancelTimer(api: Api, timerId: string): Promise<void> {
+  const { error } = await api.DELETE('/LiveTv/Timers/{timerId}', { params: { path: { timerId } } });
+  if (error !== undefined) throw new Error('Cancelling the recording failed.');
+}
+
+export async function cancelSeriesTimer(api: Api, timerId: string): Promise<void> {
+  const { error } = await api.DELETE('/LiveTv/SeriesTimers/{timerId}', { params: { path: { timerId } } });
+  if (error !== undefined) throw new Error('Cancelling the series failed.');
+}
+
+/**
+ * Timers in runs of the same start day ("Tuesday, Nov 4"), in the server's
+ * order, as jellyfin-web `groupsTimers`. A timer without a start date goes
+ * under ''.
+ */
+export function groupTimersByDay(timers: Timer[]): { name: string; timers: Timer[] }[] {
+  const groups: { name: string; timers: Timer[] }[] = [];
+  for (const t of timers) {
+    const d = t.StartDate ? new Date(t.StartDate) : null;
+    const name = d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }) : '';
+    const last = groups[groups.length - 1];
+    if (last && last.name === name) last.timers.push(t);
+    else groups.push({ name, timers: [t] });
+  }
+  return groups;
+}
+
+/**
+ * GET /LiveTv/Programs: what is on now on these channels, for channel
+ * cards (jellyfin-web `showCurrentProgram`). One request per page of
+ * channels keeps the Channels tab on its fast /Items path.
+ */
+export async function fetchAiringPrograms(api: Api, userId: string, channelIds: string[]): Promise<BaseItem[]> {
+  if (channelIds.length === 0) return [];
+  const { data, error } = await api.GET('/LiveTv/Programs', {
+    params: {
+      query: {
+        userId,
+        channelIds,
+        isAiring: true,
+        enableImages: false,
+        enableTotalRecordCount: false,
+        enableUserData: false,
+      },
+    },
+  });
+  if (error !== undefined) throw new Error('Loading the programs failed.');
   return data?.Items ?? [];
 }

@@ -224,6 +224,15 @@ function LiveTvSection({ ctx, views }: { ctx: Ctx; views?: BaseItem[] }) {
             <Link to={libraryUrl(view, { tab: 2 })} className="library-order readout">
               Channels
             </Link>
+            <Link to={libraryUrl(view, { tab: 3 })} className="library-order readout">
+              Recordings
+            </Link>
+            <Link to={libraryUrl(view, { tab: 4 })} className="library-order readout">
+              Schedule
+            </Link>
+            <Link to={libraryUrl(view, { tab: 5 })} className="library-order readout">
+              Series
+            </Link>
           </div>
         }
       />

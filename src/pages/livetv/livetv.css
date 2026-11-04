@@ -286,3 +286,77 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* Schedule and Series: a cancel button under each timer. */
+.timer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.series-timers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.series-timer {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--abyss-1);
+}
+
+.series-timer .library-order {
+  margin-top: 8px;
+
+/* A page of channels not loaded yet: its rows' height, faintly striped. */
+.guide-pending {
+  background: repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--guide-row) - 1px), var(--hairline) calc(var(--guide-row) - 1px), var(--hairline) var(--guide-row));
+}
+
+/* Channels tab: what is on now, under the channel's name. */
+.channel-now {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin-top: -2px;
+}
+
+/* Colour-coded guide backgrounds (guide settings), one tint per category as jellyfin-web. */
+.guide-program.is-movie {
+  background: rgba(123, 104, 200, 0.28);
+}
+
+.guide-program.is-sports {
+  background: rgba(76, 175, 80, 0.24);
+}
+
+.guide-program.is-kids {
+  background: rgba(33, 150, 243, 0.24);
+}
+
+.guide-program.is-news {
+  background: rgba(255, 152, 0, 0.22);
+}
+
+.guide-program.is-series {
+  background: rgba(63, 224, 197, 0.12);
+}
+
+.program-badge.is-repeat,
+.program-badge.is-hd {
+  color: var(--bone);
+  background: var(--abyss-2);
+  border: 1px solid var(--hairline);
+}

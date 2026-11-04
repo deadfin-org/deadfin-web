@@ -102,12 +102,87 @@ afterEach(() => {
 });
 
 describe('Live TV tabs', () => {
-  it('has Programs, Guide and Channels, and opens on Programs as jellyfin-web', async () => {
+  it('has jellyfin-web’s six tabs and opens on Programs', async () => {
     mount('/livetv?topParentId=lt&collectionType=livetv');
-    expect((await screen.findAllByRole('tab')).map((t) => t.textContent)).toEqual(['Programs', 'Guide', 'Channels']);
+    expect((await screen.findAllByRole('tab')).map((t) => t.textContent)).toEqual(['Programs', 'Guide', 'Channels', 'Recordings', 'Schedule', 'Series']);
     expect(screen.getByRole('tab', { name: 'Programs' }).getAttribute('aria-selected')).toBe('true');
     fireEvent.click(screen.getByRole('tab', { name: 'Guide' }));
     await waitFor(() => expect(where()).toBe(GUIDE));
+  });
+});
+
+describe('recordings, schedule and series', () => {
+  const TIMER = {
+    Id: 't1',
+    Name: 'Late News',
+    ProgramId: 'p2',
+    ChannelId: 'c1',
+    ChannelName: 'Trench One',
+    StartDate: iso(0.25 * HOUR),
+    EndDate: iso(1.25 * HOUR),
+  };
+
+  it('say "No Items" when the server has no DVR, as Deadfin answers', async () => {
+    for (const tab of [3, 4, 5]) {
+      mount(`/livetv?topParentId=lt&collectionType=livetv&tab=${tab}`);
+      expect((await screen.findByTestId('library-empty')).textContent).toBe('No Items are currently available.');
+      cleanup();
+    }
+    const paths = seen.map((u) => u.pathname);
+    for (const p of ['/LiveTv/Recordings', '/LiveTv/Recordings/Folders', '/LiveTv/Timers', '/LiveTv/SeriesTimers']) expect(paths).toContain(p);
+    const latest = seen.find((u) => u.pathname === '/LiveTv/Recordings' && u.searchParams.get('isInProgress') === 'false')!;
+    expect(latest.searchParams.get('limit')).toBe('12');
+    const timers = seen.find((u) => u.pathname === '/LiveTv/Timers')!;
+    expect(timers.searchParams.get('isScheduled')).toBe('true');
+    expect(timers.searchParams.get('isActive')).toBe('false');
+  });
+
+  it('Schedule lists timers by day and cancels one after asking', async () => {
+    const deleted: string[] = [];
+    let timers = [TIMER];
+    stubServer({
+      '/LiveTv/Timers': () => json({ Items: timers, TotalRecordCount: timers.length }),
+    });
+    const base = globalThis.fetch;
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const req = input instanceof Request ? input : new Request(new URL(String(input), SERVER), init);
+      if (req.method === 'DELETE') {
+        deleted.push(new URL(req.url).pathname);
+        timers = [];
+        return new Response(null, { status: 204 });
+      }
+      return base(input, init);
+    });
+    mount('/livetv?topParentId=lt&collectionType=livetv&tab=4');
+    const group = await screen.findByTestId('timer-group');
+    expect(within(group).getByTestId('program-card').getAttribute('href')).toBe('/details?id=p2');
+    expect(within(group).getByTestId('program-card').textContent).toContain('Trench One');
+    fireEvent.click(within(group).getByRole('button', { name: 'Cancel recording: Late News' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Cancel recording?')).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel recording' }));
+    await waitFor(() => expect(deleted).toEqual(['/LiveTv/Timers/t1']));
+    expect((await screen.findByTestId('library-empty')).textContent).toBe('No Items are currently available.');
+  });
+
+  it('Series shows each series timer’s time and channel', async () => {
+    stubServer({
+      '/LiveTv/SeriesTimers': () =>
+        json({
+          Items: [
+            { Id: 's1', Name: 'Seinfeld', RecordAnyTime: true, RecordAnyChannel: true },
+            { Id: 's2', Name: 'Late News', RecordAnyTime: false, StartDate: iso(0), ChannelName: 'Trench One' },
+          ],
+        }),
+    });
+    mount('/livetv?topParentId=lt&collectionType=livetv&tab=5');
+    const cards = await screen.findAllByTestId('series-timer');
+    expect(cards[0]!.textContent).toContain('Anytime');
+    expect(cards[0]!.textContent).toContain('All channels');
+    expect(cards[1]!.textContent).toContain('Trench One');
+    expect(within(cards[1]!).getByRole('button', { name: 'Cancel series: Late News' })).toBeTruthy();
+    const q = seen.find((u) => u.pathname === '/LiveTv/SeriesTimers')!;
+    expect(q.searchParams.get('sortBy')).toBe('SortName');
   });
 });
 
@@ -196,10 +271,124 @@ describe('guide', () => {
     await waitFor(() => expect(where()).toBe(GUIDE));
   });
 
+  it('at 40,000 channels fetches and draws only the pages in view', async () => {
+    const TOTAL = 40_000;
+    stubServer({
+      '/LiveTv/Channels': (u) => {
+        const start = Number(u.searchParams.get('startIndex'));
+        const limit = Number(u.searchParams.get('limit'));
+        const items = Array.from({ length: Math.min(limit, TOTAL - start) }, (_, i) => ({ Id: `x${start + i}`, Name: `Ch ${start + i + 1}`, Type: 'TvChannel' }));
+        return json({ Items: items, TotalRecordCount: TOTAL, StartIndex: start });
+      },
+    });
+    mount(GUIDE);
+    const grid = await screen.findByRole('grid', { name: 'TV guide' });
+    expect(grid.getAttribute('aria-rowcount')).toBe(String(TOTAL + 1));
+    await waitFor(() => expect(within(grid).getAllByTestId('guide-row')).toHaveLength(60));
+    const starts = () => seen.filter((u) => u.pathname === '/LiveTv/Channels').map((u) => Number(u.searchParams.get('startIndex')));
+    expect(new Set(starts())).toEqual(new Set([0, 30]));
+    expect(screen.getByTestId('library-count').textContent).toBe('40000 items');
+
+    // Jump to row 20,000 (rows are 64px; jsdom has no layout, so give the scroller its size).
+    const scroller = screen.getByTestId('guide-scroll');
+    Object.defineProperty(scroller, 'clientHeight', { value: 640, configurable: true });
+    scroller.scrollTop = 20_000 * 64;
+    fireEvent.scroll(scroller);
+    expect(await within(grid).findByRole('link', { name: 'Play Ch 20001' })).toBeTruthy();
+    const rows = within(grid).getAllByTestId('guide-row');
+    expect(rows.length).toBeLessThanOrEqual(120);
+    expect(within(grid).queryByRole('link', { name: 'Play Ch 1' })).toBeNull();
+    // Only the pages around the view were asked for: rows 20,000–20,010 are on pages 666 and 667.
+    expect(new Set(starts())).toEqual(new Set([0, 30, 665 * 30, 666 * 30, 667 * 30, 668 * 30]));
+    // One cell keeps the Tab stop after its page scrolled away.
+    await waitFor(() => expect(grid.querySelectorAll('[tabindex="0"]')).toHaveLength(1));
+  });
+
   it('says so when a channel has no guide data', async () => {
     stubServer({ '/LiveTv/Programs': () => json({ Items: [] }) });
     mount(GUIDE);
     expect(await screen.findAllByText('No guide data')).toHaveLength(2);
+  });
+});
+
+describe('guide settings', () => {
+  it('read and save jellyfin-web’s usersettings keys, keeping the other preferences', async () => {
+    let stored: { Id: string; CustomPrefs: Record<string, string> } = { Id: 'usersettings', CustomPrefs: { homesection0: 'resume', 'guide-indicator-repeat': 'true' } };
+    const posted: unknown[] = [];
+    stubServer({
+      '/LiveTv/Programs': (u) =>
+        json({ Items: [{ ...PROGRAMS[0]!, IsRepeat: true, IsHD: true }, PROGRAMS[2]!].filter((p) => u.searchParams.getAll('channelIds').includes(p.ChannelId)) }),
+      '/DisplayPreferences/usersettings': () => json(stored),
+    });
+    const base = globalThis.fetch;
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const req = input instanceof Request ? input : new Request(new URL(String(input), SERVER), init);
+      if (req.method === 'POST' && new URL(req.url).pathname === '/DisplayPreferences/usersettings') {
+        stored = await req.json();
+        posted.push(stored);
+        return new Response(null, { status: 204 });
+      }
+      return base(input, init);
+    });
+    mount(GUIDE);
+    const grid = await screen.findByRole('grid', { name: 'TV guide' });
+    // Repeat is on in the stored settings, so the repeat episode says so.
+    expect(await within(grid).findByRole('link', { name: /^Seinfeld, .*, Repeat, On now$/ })).toBeTruthy();
+    const ch = () => seen.filter((u) => u.pathname === '/LiveTv/Channels');
+    expect(ch()[0]!.searchParams.get('enableFavoriteSorting')).toBe('true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Settings' });
+    fireEvent.click(within(dialog).getByLabelText('Recently watched'));
+    fireEvent.click(within(dialog).getByLabelText('Place favorite channels at the beginning'));
+    fireEvent.click(within(dialog).getByLabelText('HD programs'));
+    fireEvent.click(within(dialog).getByLabelText('Color coded backgrounds'));
+    // Sports only: the channels are filtered and other programmes lose their titles.
+    for (const c of ['Movies', 'Kids', 'News']) fireEvent.click(within(dialog).getByLabelText(c));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    expect(posted).toHaveLength(1);
+    expect(stored.CustomPrefs).toMatchObject({
+      homesection0: 'resume',
+      'livetv-channelorder': 'DatePlayed',
+      'livetv-favoritechannelsattop': 'false',
+      'guide-indicator-hd': 'true',
+      'guide-indicator-repeat': 'true',
+      'guide-colorcodedbackgrounds': 'true',
+    });
+    await waitFor(() => expect(ch().some((u) => u.searchParams.get('sortBy') === 'DatePlayed')).toBe(true));
+    const last = ch()[ch().length - 1]!;
+    expect(last.searchParams.get('enableFavoriteSorting')).toBe('false');
+    expect(last.searchParams.get('isSports')).toBe('true');
+    expect(last.searchParams.get('isMovie')).toBeNull();
+    // The grid is drawn anew for the new channel order.
+    const grid2 = await screen.findByRole('grid', { name: 'TV guide' });
+    const match = await within(grid2).findByRole('link', { name: /^Match of the Day/ });
+    expect(match.className).toContain('is-sports');
+    expect(match.textContent).toContain('Match of the Day');
+    const seinfeld = within(grid2).getByRole('link', { name: /^Seinfeld/ });
+    expect(seinfeld.textContent).toBe('');
+  });
+});
+
+describe('channels', () => {
+  it('cards show what is on now, from one airing request per page', async () => {
+    stubServer({
+      '/Items': () => json({ Items: CHANNELS, TotalRecordCount: 2 }),
+      '/LiveTv/Programs': (u) => {
+        const ids = u.searchParams.getAll('channelIds');
+        const airing = PROGRAMS.filter((p) => ids.includes(p.ChannelId) && Date.parse(p.StartDate) <= now && Date.parse(p.EndDate) > now);
+        return json({ Items: u.searchParams.get('isAiring') === 'true' ? airing : [] });
+      },
+    });
+    mount('/livetv?topParentId=lt&collectionType=livetv&tab=2');
+    const now1 = await screen.findAllByTestId('channel-now');
+    expect(now1.map((n) => n.textContent)).toEqual([expect.stringContaining('Seinfeld'), expect.stringContaining('Match of the Day')]);
+    const airing = seen.filter((u) => u.pathname === '/LiveTv/Programs');
+    expect(airing).toHaveLength(1);
+    expect(airing[0]!.searchParams.getAll('channelIds')).toEqual(['c1', 'c2']);
+    expect(airing[0]!.searchParams.get('enableImages')).toBe('false');
   });
 });
 

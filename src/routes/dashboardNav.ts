@@ -23,6 +23,8 @@ export const DASHBOARD_NAV: DashboardNavSection[] = [
       { path: 'playback/resume', label: 'Resume', group: 'Playback' },
       { path: 'playback/streaming', label: 'Streaming', group: 'Playback' },
       { path: 'playback/trickplay', label: 'Trickplay', group: 'Playback' },
+      // Deadfin: remote transcode workers (D-118).
+      { path: 'playback/workers', label: 'Transcode Workers', group: 'Playback' },
     ],
   },
   {
