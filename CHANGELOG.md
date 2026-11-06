@@ -13,6 +13,12 @@ Release assets: `ghcr.io/deadfin-org/deadfin-web:<tag>` and
 
 ## [Unreleased]
 
+## [0.4.0-rc.1]
+
+Release candidate for v0.4.0. It adds the transcode workers dashboard and
+Live TV for viewers. The Deadfin server image v0.4.0-rc.1 bundles this
+release at `/web/`.
+
 ### Added
 
 - **Transcode workers page** (deadfin-web#71): Dashboard → Playback →
@@ -30,7 +36,23 @@ Release assets: `ghcr.io/deadfin-org/deadfin-web:<tag>` and
   picker. Programmes show their season, episode, episode title and a Live,
   Premiere or New badge when the guide has them. A programme opens its
   details, where Play starts its channel while it airs; a channel plays.
-  Recordings, Schedule and Series wait for the server's DVR.
+
+- **Live TV Recordings, Schedule and Series tabs** (deadfin-web#91), as
+  jellyfin-web 12.0, on the server's `/LiveTv/Recordings`, `/LiveTv/Timers`
+  and `/LiveTv/SeriesTimers` endpoints. Schedule and Series can cancel a
+  recording or a series. They stay empty on a server without a DVR.
+
+- **Guide settings** (deadfin-web#91): jellyfin-web's Settings dialog for
+  the guide, with the same user settings: channel order (number or recently
+  watched), favorite channels first, and the HD, Live, New, Premiere and
+  Repeat indicators.
+
+### Changed
+
+- **The guide draws only the channels in view** (deadfin-web#91). The grid
+  is as tall as the whole lineup, and it fetches and draws only the pages of
+  channels near the scroll position, so a lineup of 11,000 channels scrolls
+  to any channel. Channel cards show the programme that is on now.
 
 ## [0.3.0-rc.4]
 
